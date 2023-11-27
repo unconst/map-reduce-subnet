@@ -133,6 +133,11 @@ python3 neurons/benchmark.py
 ## Configuration with validator.config.json
 
 Modify validator.config.json with appropriate settings, including hotkeys for benchmark bots.
+
+```bash
+cp example.validator.config.json validator.config.json
+```
+
 ```json
 {
 	"subtensor.network": "local",
