@@ -7,7 +7,7 @@ import bittensor as bt
 import torch.multiprocessing as mp
 import torch
 import mapreduce
-from mapreduce.utils import calculate_bandwidth_from_free_memory, get_my_version, check_version, check_processes, get_unused_port, human_readable_size
+import mapreduce.utils as utils
 from dist_validator import start_master_process
 from threading import Thread
 import json
@@ -171,7 +171,7 @@ def main( config ):
         
     def update_miner_status():
         responses = dendrite.query(metagraph.axons, mapreduce.protocol.MinerStatus(
-            version=get_my_version(),
+            version=utils.get_my_version(),
         ))
         for response, miner in zip(responses, miner_status):
             if response.available and ( miner['status'] == 'unavailable' or miner['status'] == 'available'):
@@ -196,9 +196,9 @@ def main( config ):
             result:mapreduce.protocol.BenchmarkResult = processes[hotkey]['output_queue'].get()
             log =  (f'🟢 Benchmark Result | UID: {miner_uid} | '\
                     f'Duration: {result.duration:.2f}s | '\
-                    f'Data: {human_readable_size(result.data_length)} | '\
-                    f'Bandwidth: {human_readable_size(result.bandwidth)} | '\
-                    f'Speed: {human_readable_size(result.speed)}/s | '\
+                    f'Data: {utils.human_readable_size(result.data_length)} | '\
+                    f'Bandwidth: {utils.human_readable_size(result.bandwidth)} | '\
+                    f'Speed: {utils.human_readable_size(result.speed)}/s | '\
             )
             bt.logging.success(log)
             miner_status[miner_uid]['status'] = 'benchmarked'
@@ -217,8 +217,8 @@ def main( config ):
         bt.logging.info(f"Benchmark request from {hotkey}")
                 
         # Version checking
-        if not check_version(synapse.version):
-            synapse.version = get_my_version()
+        if not utils.check_version(synapse.version):
+            synapse.version = utils.get_my_version()
             return synapse
         
         # Choose un-benchmarked miner
@@ -248,10 +248,10 @@ def main( config ):
             synapse.job.master_hotkey = axon.wallet.hotkey.ss58_address
             synapse.job.client_hotkey = hotkey
             synapse.job.master_addr = axon.external_ip
-            synapse.job.master_port = get_unused_port(9000, 9300)
+            synapse.job.master_port = utils.get_unused_port(9000, 9300)
             
             miner_bandwidth = miner.get('bandwidth', 0)
-            current_bandwidth = calculate_bandwidth_from_free_memory(miner.get('free_memory',0))
+            current_bandwidth = utils.calc_bandwidth_from_memory(miner.get('free_memory',0))
             # If the miner got bandwidth benchmark already, use 100 MB bandwidth for benchmarking
             # Bandwidth are benchmarked every 6 hours
             if miner_bandwidth > 0:
@@ -311,8 +311,8 @@ def main( config ):
         bt.logging.info(f"Connecting request from {hotkey}")
         
         # Version checking
-        if not check_version(synapse.version):
-            synapse.version = get_my_version()
+        if not utils.check_version(synapse.version):
+            synapse.version = utils.get_my_version()
             return synapse
         
         try:
@@ -327,7 +327,7 @@ def main( config ):
                 synapse.job.master_hotkey = axon.wallet.hotkey.ss58_address
                 synapse.job.client_hotkey = hotkey
                 synapse.job.master_addr = axon.external_ip
-                synapse.job.master_port = get_unused_port(9000, 9300)
+                synapse.job.master_port = utils.get_unused_port(9000, 9300)
                 
                 bt.logging.info("⌛ Starting work process")
                 bt.logging.trace(synapse.job)
@@ -381,8 +381,8 @@ def main( config ):
         
         bt.logging.info(f"Get benchmark result request from {hotkey}")
         # Version checking
-        if not check_version(synapse.version):
-            synapse.version = get_my_version()
+        if not utils.check_version(synapse.version):
+            synapse.version = utils.get_my_version()
             return synapse
         # Check if the master process is running
         # Get the result from the master process
@@ -415,7 +415,7 @@ def main( config ):
             if miner['status'] == 'failed':
                 color = '91'
             
-            bt.logging.info(f"Miner {miner['uid']} \033[{color}m{miner['status']}\033[0m | \033[{color}m{scores[miner['uid']]}\033[0m | Speed: \033[{color}m{human_readable_size(miner.get('speed', 0))}/s\033[0m | Bandwidth: \033[{color}m{human_readable_size(miner.get('bandwidth', 0))}\033[0m | Free Memory: \033[{color}m{human_readable_size(miner.get('free_memory', 0))}\033[0m")
+            bt.logging.info(f"Miner {miner['uid']} \033[{color}m{miner['status']}\033[0m | \033[{color}m{scores[miner['uid']]}\033[0m | Speed: \033[{color}m{utils.human_readable_size(miner.get('speed', 0))}/s\033[0m | Bandwidth: \033[{color}m{utils.human_readable_size(miner.get('bandwidth', 0))}\033[0m | Free Memory: \033[{color}m{utils.human_readable_size(miner.get('free_memory', 0))}\033[0m")
         
 
     init_miner_status()
@@ -443,7 +443,7 @@ def main( config ):
     axon.start()
 
     # Check processes
-    thread = Thread(target=check_processes, args=(processes, miner_status))
+    thread = Thread(target=utils.check_processes, args=(processes, miner_status))
     thread.start()
 
     # Step 6: Keep the miner alive
@@ -478,7 +478,7 @@ def main( config ):
                 update_miner_status()            
                 for miner in miner_status:
                     if miner['status'] == 'benchmarked':
-                        bt.logging.info(f"Miner {miner['uid']} | Speed: {human_readable_size(miner['speed'])}/s | Bandwidth: {human_readable_size(miner['bandwidth'])}")
+                        bt.logging.info(f"Miner {miner['uid']} | Speed: {utils.human_readable_size(miner['speed'])}/s | Bandwidth: {utils.human_readable_size(miner['bandwidth'])}")
             if step % 20 == 0:
                 log_miner_status()        
                     

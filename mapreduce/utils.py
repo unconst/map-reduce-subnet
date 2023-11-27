@@ -263,5 +263,5 @@ def get_free_memory():
 """
 Retrieves the amount of available bandwidth from the free memory.
 """
-def calculate_bandwidth_from_free_memory(free_memory):
+def calc_bandwidth_from_memory(free_memory: int):
     return int((free_memory - 300 * 1024 * 1024) / 2)
