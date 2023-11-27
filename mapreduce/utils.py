@@ -247,6 +247,13 @@ def get_unused_port(start_port, end_port):
     #  select random port in unused ports
     return unused_ports[random.randint(0, len(unused_ports) - 1)]
 
+
+"""
+Retrieves the amount of available bandwidth from the free memory.
+"""
+def calc_bandwidth_from_memory(free_memory: int):
+    return max(int((free_memory - 300 * 1024 * 1024) / 2), 0)
+
 """
 Retrieves the amount of free memory in the system.
 
@@ -258,10 +265,3 @@ def get_free_memory():
     memory = psutil.virtual_memory()
     # Free memory in bytes
     return memory.free
-
-
-"""
-Retrieves the amount of available bandwidth from the free memory.
-"""
-def calc_bandwidth_from_memory(free_memory: int):
-    return max(int((free_memory - 300 * 1024 * 1024) / 2), 0)
