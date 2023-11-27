@@ -6,6 +6,7 @@ import traceback
 import bittensor as bt
 import torch.multiprocessing as mp
 import torch
+from typing import Tuple
 import mapreduce
 import mapreduce.utils as utils
 from dist_validator import start_master_process
