@@ -1,0 +1,86 @@
+import torch.multiprocessing as mp
+import time
+from peer.peer import Peer
+import bittensor as bt
+from argparse import ArgumentParser
+import os
+import mapreduce.utils as utils
+
+# Maximum size for benchmarking, set to 10 GB
+benchmark_max_size = 10 * 1024 * 1024 * 1024 
+
+# Setting up the argument parser
+parser = ArgumentParser()
+
+parser.add_argument('--validator.uid', type = int, help='Validator UID')
+parser.add_argument('--netuid', type = int, default = 10, help = "The chain subnet uid." )
+
+bt.subtensor.add_args(parser)
+bt.logging.add_args(parser)
+bt.wallet.add_args(parser)
+bt.axon.add_args(parser)
+
+config = bt.config(
+    parser=parser
+)
+
+wallet = bt.wallet(config=config)
+dendrite = bt.dendrite(wallet=wallet) 
+validator_uid = config.validator.uid
+
+config.full_path = os.path.expanduser(
+        "{}/{}/{}/netuid{}/{}".format(
+            config.logging.logging_dir,
+            config.wallet.name,
+            config.wallet.hotkey,
+            config.netuid,
+            'benchmark',
+        )
+    )
+# Ensure the directory for logging exists, else create one.
+if not os.path.exists(config.full_path): os.makedirs(config.full_path, exist_ok=True)
+
+bt.logging(config=config, logging_dir=config.full_path)
+
+bt.logging.info(f"Configurations: {config}")
+"""
+Performs benchmarking operations for the given validator.
+
+Args:
+    wallet (bt.Wallet): Bittensor wallet instance.
+    validator_uid (int): Validator's unique identifier.
+    netuid (int): Network unique identifier.
+    network (str): Network information.
+"""
+def benchmark(wallet, validator_uid, netuid, network ):
+    bt.logging.info("")
+    bt.logging.info(f"Starting benchmarking bot")
+    
+    # Initialize Peer instance
+    peer = Peer(1, 1, 0, wallet, validator_uid, netuid, network, benchmark_max_size = benchmark_max_size)
+
+    # Initialize process group with the fetched configuration
+    if not peer.benchmark():
+        # Not able to benchmark, wait a bit
+        time.sleep(2)
+        return
+    peer.destroy_process_group()
+    bt.logging.success("Benchmarking completed")
+
+"""
+The main function to continuously run the benchmarking process.
+"""
+def main():
+    while True: 
+        # Start the benchmarking process
+        p = mp.Process(target=benchmark, args=(wallet, validator_uid, config.netuid, config.subtensor.network))
+        p.start()
+        p.join()
+        time.sleep(1)
+
+if __name__ == '__main__':
+    # Check if there is enough free memory to run the benchmark
+    if utils.get_free_memory() < benchmark_max_size * 2:
+        bt.logging.error("🔴 Not enough memory to run benchmark")
+        exit(1)
+    main()
