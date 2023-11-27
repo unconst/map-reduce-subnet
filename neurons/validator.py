@@ -8,7 +8,7 @@ import torch.multiprocessing as mp
 import torch
 import mapreduce
 from mapreduce.utils import calculate_bandwidth_from_free_memory, get_my_version, check_version, check_processes, get_unused_port, human_readable_size
-from neurons.dist_validator import start_master_process
+from dist_validator import start_master_process
 from threading import Thread
 import json
 
@@ -297,7 +297,7 @@ def main( config ):
             miner['status'] = 'available'
             return synapse
 
-    def blacklist_request_benchmark(synapse: mapreduce.protocol.RequestBenchmark) -> (bool, str):
+    def blacklist_request_benchmark(synapse: mapreduce.protocol.RequestBenchmark) -> Tuple[bool, str]:
         hotkey = synapse.dendriate.hotkey
         # Check if the hotkey is benchmark_hotkey
         if hotkey not in validator_config['benchmark_hotkeys']:
@@ -395,7 +395,7 @@ def main( config ):
         ) for miner in miner_status ]
         return synapse
 
-    def blacklist_get_benchmark_result( synapse: mapreduce.protocol.BenchmarkResults ) -> (bool, str):
+    def blacklist_get_benchmark_result( synapse: mapreduce.protocol.BenchmarkResults ) -> Tuple[bool, str]:
         hotkey = synapse.dendrite.hotkey
         allowed_hotkeys = [
             "5DkRd1V7eurDpgKbiJt7YeJzQvxgpPiiU6FMDf8RmYQ78DpD", # Allow subnet owner's hotkey to fetch benchmark results from validators

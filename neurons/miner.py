@@ -25,7 +25,7 @@ import traceback
 import bittensor as bt
 from typing import Tuple
 import torch.multiprocessing as mp
-from neurons.dist_miner import start_miner_dist_process
+from dist_miner import start_miner_dist_process
 import mapreduce
 from mapreduce.utils import check_version, check_processes, human_readable_size, get_free_memory, get_my_version, is_process_running
 
