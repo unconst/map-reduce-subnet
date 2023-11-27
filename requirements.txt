@@ -1,2 +1,4 @@
-git+https://github.com/opentensor/bittensor.git@revolution
+bittensor
 torch
+psutil
+netifaces
