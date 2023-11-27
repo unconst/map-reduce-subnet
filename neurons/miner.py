@@ -1,7 +1,5 @@
 # The MIT License (MIT)
-# Copyright © 2023 Yuma Rao
-# TODO(developer): Set your name
-# Copyright © 2023 <your name>
+# Copyright © 2023 ChainDude
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
@@ -18,7 +16,6 @@
 # DEALINGS IN THE SOFTWARE.
 
 # Bittensor Miner Template:
-# TODO(developer): Rewrite based on protocol and validator defintion.
 
 # Step 1: Import necessary libraries and modules
 import os
@@ -26,19 +23,25 @@ import time
 import argparse
 import traceback
 import bittensor as bt
+from typing import Tuple
+import torch.multiprocessing as mp
+from neurons.dist_miner import start_miner_dist_process
+import mapreduce
+from mapreduce.utils import check_version, check_processes, human_readable_size, get_free_memory, get_my_version, is_process_running
 
-# import this repo
-import template
+# import miner
+
+processes = {
+
+}
 
 def get_config():
     # Step 2: Set up the configuration parser
     # This function initializes the necessary command-line arguments.
     # Using command-line arguments allows users to customize various miner settings.
     parser = argparse.ArgumentParser()
-    # TODO(developer): Adds your custom miner arguments to the parser.
-    parser.add_argument('--custom', default='my_custom_value', help='Adds a custom value to the parser.')
-    # Adds override arguments for network and netuid.
-    parser.add_argument( '--netuid', type = int, default = 1, help = "The chain subnet uid." )
+    parser.add_argument( '--netuid', type = int, default = 10, help = "The chain subnet uid." )
+    parser.add_argument( '--axon.port', type = int, default = 8091, help = "Default port" )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
     # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
@@ -91,7 +94,7 @@ def main( config ):
 
     # metagraph provides the network's current state, holding state about other participants in a subnet.
     metagraph = subtensor.metagraph(config.netuid)
-    bt.logging.info(f"Metagraph: {metagraph}")
+    bt.logging.info(f"Metagraph: {metagraph} {metagraph.axons}")
 
     if wallet.hotkey.ss58_address not in metagraph.hotkeys:
         bt.logging.error(f"\nYour validator: {wallet} if not registered to chain connection: {subtensor} \nRun btcli register and try again. ")
@@ -104,7 +107,7 @@ def main( config ):
     # Step 4: Set up miner functionalities
     # The following functions control the miner's response to incoming requests.
     # The blacklist function decides if a request should be ignored.
-    def blacklist_fn( synapse: template.protocol.Dummy ) -> bool:
+    def blacklist_fn( synapse: mapreduce.protocol.Join ) -> Tuple[bool, str]:
         # TODO(developer): Define how miners should blacklist requests. This Function 
         # Runs before the synapse data has been deserialized (i.e. before synapse.data is available).
         # The synapse is instead contructed via the headers of the request. It is important to blacklist
@@ -113,60 +116,105 @@ def main( config ):
         if synapse.dendrite.hotkey not in metagraph.hotkeys:
             # Ignore requests from unrecognized entities.
             bt.logging.trace(f'Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}')
-            return True
-        # TODO(developer): In practice it would be wise to blacklist requests from entities that 
-        # are not validators, or do not have enough stake. This can be checked via metagraph.S
-        # and metagraph.validator_permit. You can always attain the uid of the sender via a
-        # metagraph.hotkeys.index( synapse.dendrite.hotkey ) call.
-        # Otherwise, allow the request to be processed further.
-        bt.logging.trace(f'Not Blacklisting recognized hotkey {synapse.dendrite.hotkey}')
-        return False
+            return True, ""
+        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
+        stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
+        bt.logging.info(f"Stake: {stake}")
+        if stake < 10:
+            bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
+            return True, ""
+        return False, ""
 
     # The priority function determines the order in which requests are handled.
     # More valuable or higher-priority requests are processed before others.
-    def priority_fn( synapse: template.protocol.Dummy ) -> float:
-        # TODO(developer): Define how miners should prioritize requests.
-        # Miners may recieve messages from multiple entities at once. This function
-        # determines which request should be processed first. Higher values indicate
-        # that the request should be processed first. Lower values indicate that the
-        # request should be processed later.
-        # Below: simple logic, prioritize requests from entities with more stake.
+    def priority_fn( synapse: mapreduce.protocol.Join ) -> float:
         caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
         prirority = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
         bt.logging.trace(f'Prioritizing {synapse.dendrite.hotkey} with value: ', prirority)
         return prirority
 
     # This is the core miner function, which decides the miner's response to a valid, high-priority request.
-    def dummy( synapse: template.protocol.Dummy ) -> template.protocol.Dummy:
-        # TODO(developer): Define how miners should process requests.
-        # This function runs after the synapse has been deserialized (i.e. after synapse.data is available).
-        # This function runs after the blacklist and priority functions have been called.
-        # Below: simple template logic: return the input value multiplied by 2.
-        # If you change this, your miner will lose emission in the network incentive landscape.
-        synapse.dummy_output = synapse.dummy_input * 2
+    def get_miner_status( synapse: mapreduce.protocol.MinerStatus ) -> mapreduce.protocol.MinerStatus:
+        # Check version of the synapse
+        validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
+        bt.logging.info(f"Validator {validator_uid} asks Miner Status")
+        if not check_version(synapse.version):
+            synapse.version = get_my_version()
+            return synapse
+        # Get Free Memory and Calculate Bandwidth
+        synapse.free_memory = get_free_memory()
+        bt.logging.info(f"Free memory: {human_readable_size(synapse.free_memory)}")
+        synapse.version = get_my_version()
+        synapse.available = not is_process_running(processes)
         return synapse
+
+    def join_group( synapse: mapreduce.protocol.Join ) -> mapreduce.protocol.Join:
+        validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
+        bt.logging.info(f"Validator {validator_uid} asks Joining Group")
+        try:
+            if not check_version(synapse.version):
+                synapse.version = get_my_version()
+                return synapse
+            if is_process_running(processes):
+                synapse.joining = False
+                synapse.reason = 'Working'
+                return synapse
+            synapse.version = get_my_version()
+            synapse.job.rank = synapse.ranks.get(str(my_subnet_uid))
+            if synapse.job.client_hotkey in processes and processes[synapse.job.client_hotkey]['process'].is_alive():
+                synapse.joining = False
+                synapse.reason = 'Already in group'
+                return synapse
+            # try to join the group
+            bt.logging.info("🔵 Start Process ...")
+            queue = mp.Queue()
+            process = mp.Process(target=start_miner_dist_process, args=(queue, axon.external_ip, wallet, synapse.job))
+            process.start()
+            processes[synapse.job.client_hotkey] = {
+                'process': process,
+                'queue': queue,
+                'job': synapse.job
+            }
+            synapse.joining = True
+            return synapse
+        except Exception as e:
+            # if failed, set joining to false
+            bt.logging.info(f"❌ Error {e}")
+            traceback.print_exc()
+            synapse.joining = False
+            synapse.reason = str(e)
+            return synapse
 
     # Step 5: Build and link miner functions to the axon.
     # The axon handles request processing, allowing validators to send this process requests.
-    axon = bt.axon( wallet = wallet )
+    axon = bt.axon( wallet = wallet, config = config,  port = config.axon.port )
     bt.logging.info(f"Axon {axon}")
 
     # Attach determiners which functions are called when servicing a request.
     bt.logging.info(f"Attaching forward function to axon.")
     axon.attach(
-        forward_fn = dummy,
+        forward_fn = get_miner_status,
+        # blacklist_fn = blacklist_fn,
+    ).attach(
+        forward_fn = join_group,
         blacklist_fn = blacklist_fn,
-        priority_fn = priority_fn,
+        priority_fn = priority_fn
     )
 
     # Serve passes the axon information to the network + netuid we are hosting on.
     # This will auto-update if the axon port of external ip have changed.
-    bt.logging.info(f"Serving axon {dummy} on network: {config.subtensor.chain_endpoint} with netuid: {config.netuid}")
+    bt.logging.info(f"Serving axon on network: {config.subtensor.chain_endpoint} with netuid: {config.netuid}")
     axon.serve( netuid = config.netuid, subtensor = subtensor )
 
     # Start  starts the miner's axon, making it active on the network.
     bt.logging.info(f"Starting axon server on port: {config.axon.port}")
     axon.start()
+    
+    # Check processes
+    # thread = Thread(target=check_processes, args=(processes, ))
+    # thread.start()
+
+    check_processes(processes)
 
     # Step 6: Keep the miner alive
     # This loop maintains the miner's operations until intentionally stopped.
@@ -174,10 +222,9 @@ def main( config ):
     step = 0
     while True:
         try:
-            # TODO(developer): Define any additional operations to be performed by the miner.
             # Below: Periodically update our knowledge of the network graph.
             if step % 5 == 0:
-                metagraph = subtensor.metagraph(config.netuid)
+                # metagraph = subtensor.metagraph(config.netuid)
                 log =  (f'Step:{step} | '\
                         f'Block:{metagraph.block.item()} | '\
                         f'Stake:{metagraph.S[my_subnet_uid]} | '\
@@ -187,6 +234,7 @@ def main( config ):
                         f'Incentive:{metagraph.I[my_subnet_uid]} | '\
                         f'Emission:{metagraph.E[my_subnet_uid]}')
                 bt.logging.info(log)
+            
             step += 1
             time.sleep(1)
 
