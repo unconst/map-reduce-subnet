@@ -250,6 +250,12 @@ if __name__ == '__main__':
 
 ```
 
+User also can test the map-reduce subnet by running test.py
+```bash
+python3 test/test.py --subtensor.network local --wallet.name <wallet name> --wallet.hotkey <hotkey name> --validator.uid <validator uid>
+```
+
+
 ## License
 This repository is licensed under the MIT License.
 ```text
