@@ -58,9 +58,9 @@ def train(rank, peer_count, bandwidth, wallet, validator_uid, netuid, network ):
         gradients = peer.all_reduce(gradients)
     
     peer.destroy_process_group()
-    print(f"Peer {rank} has finished training.")
+    bt.logging.success(f"Peer {rank} has finished training.")
 
-print("config", config)
+bt.logging.info(f"config {config}")
 
 def main():
     peer_count = 2
