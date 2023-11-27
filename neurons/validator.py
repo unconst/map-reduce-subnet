@@ -304,8 +304,8 @@ def main( config ):
         if hotkey not in validator_config['benchmark_hotkeys']:
             bt.logging.error(f"Hotkey {hotkey} is not benchmark_hotkey")
             synapse.job.reason = f"Hotkey {hotkey} is not benchmark_hotkey"
-            return False, ""
-        return True, ""
+            return True, ""
+        return False, ""
 
     def connect_master( synapse: mapreduce.protocol.ConnectMaster ) -> mapreduce.protocol.ConnectMaster:
         hotkey = synapse.dendrite.hotkey
@@ -403,8 +403,8 @@ def main( config ):
         ]
         # Check if the hotkey is allowed list
         if hotkey not in allowed_hotkeys:
-            return False, ""
-        return True, ""
+            return True, ""
+        return False, ""
         
     def log_miner_status():
         for miner in miner_status:
