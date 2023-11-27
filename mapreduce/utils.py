@@ -158,9 +158,10 @@ def check_processes(processes, miner_status = None):
                     miner_status[miner_uid]['retry'] = miner_status[miner_uid].get('retry', 0) + 1
                     if miner_status[miner_uid]['retry'] > 5:
                         miner_status[miner_uid] = 'failed'
-            for uid in processes[key]['miners']:
-                if miner_status[uid]['status'] == 'working':
-                    miner_status[uid]['status'] = 'available'
+            if 'miners' in processes[key]:
+                for uid in processes[key]['miners']:
+                    if miner_status[uid]['status'] == 'working':
+                        miner_status[uid]['status'] = 'available'
             del processes[key]
         time.sleep(1)
         
