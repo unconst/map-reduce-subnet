@@ -2,7 +2,7 @@
 <div align="center">
 
 # **Bittensor Map Reduce** <!-- omit in toc -->
-[![Discord Chat](https://img.shields.io/discord/308323056592486420.svg)](https://discord.gg/bittensor)
+[![Discord Chat](https://img.shields.io/discord/308323056592486420.svg)](https://discord.com/channels/799672011265015819/1163969538191269918)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
 
 ---
@@ -23,56 +23,149 @@ The map-reduce cycle is essential for reducing the bandwidth by a factor of K on
 
 ---
 
-# Running the template
-Before running the template you will need to attain a subnetwork on either Bittensor's main network, test network, or your own staging network. To create subnetworks on each of these subnets follow the instructions in files below:
-- `docs/running_on_staging.md`
-- `docs/running_on_testnet.md`
-- `docs/running_on_mainnet.md`
+# How it works
+![Map Reduce Diagram](map_reduce.svg)
 
-</div>
+The diagram illustrates the workflow of a distributed map-reduce system with an integrated validation mechanism:
 
----
+Peer Gradient Splitting:
+
+Peers do machine training and generate unique gradients.
+These gradients are divided into segments (Seg1, Seg2, Seg3 in the diagram), which are then distributed among the miners (Miner1, Miner2, Miner3 in the diagram).
+
+Miner Gradient Processing:
+
+Each miner receives segments from the peers. The miners perform computations on these segments, which could involve averaging, sum or other forms of data processing.
+After processing, each miner holds an averaged gradient segment, denoted as g^ (1) for Miner1, g^ (2) for Miner2, and g^ (3) for Miner3.
+
+Gradient Broadcasting and Aggregation:
+
+The miners then broadcast their processed gradient segments back to all peers.
+Each peer collects these averaged gradient segments, reconstructing the full set of averaged gradients, which could then be used for further computations or iterations within a larger algorithm.
+
+Validation:
+
+A validator independently samples small subsets of data from both the peers and the miners.
+The validator's role is to confirm that the miners' computations are accurate and that the integrity of the data remains intact through the process.
+This system ensures the distributed processing of data with a check-and-balance system provided by the validator. This validation step is crucial for maintaining the reliability of the distributed computation, especially in decentralized or trustless environments where the computation's correctness cannot be taken for granted.
 
 # Installation
 This repository requires python3.8 or higher. To install, simply clone this repository and install the requirements.
+
+## Install Dependencies
 ```bash
-git clone https://github.com/opentensor/bittensor-subnet-template.git
-cd bittensor-subnet-template
-python -m pip install -r requirements.txt
+git clone https://github.com/dream-well/map-reduce-subnet
+cd map-reduce-subnet
 python -m pip install -e .
 ```
 
-</div>
 
----
+# Running Miner
 
-Once you have installed this repo and attained your subnet via the instructions in the nested docs (staging, testing, or main) you can run the miner and validator with the following commands.
+## Prerequisites
+
+For running a miner, you need enough resources.
+The minimal requirements for running a miner are 
+
+- Public IP address
+- Network bandwidth: 1Gbps
+- RAM: 10GB
+
+Note: Higher network bandwidth and RAM can lead to more rewards.
+
+## Running Miner Script
+
+Run the miner using the following script:
+
 ```bash
 # To run the miner
-python -m neurons/miner.py 
-    --netuid <your netuid>  # Must be attained by following the instructions in the docs/running_on_*.md files
-    --subtensor.chain_endpoint <your chain url>  # Must be attained by following the instructions in the docs/running_on_*.md files
-    --wallet.name <your miner wallet> # Must be created using the bittensor-cli
-    --wallet.hotkey <your validator hotkey> # Must be created using the bittensor-cli
-    --logging.debug # Run in debug mode, alternatively --logging.trace for trace mode
-
-# To run the validator
-python -m neurons/validator.py 
-    --netuid <your netuid> # Must be attained by following the instructions in the docs/running_on_*.md files
-    --subtensor.chain_endpoint <your chain url> # Must be attained by following the instructions in the docs/running_on_*.md files
-    --wallet.name <your validator wallet>  # Must be created using the bittensor-cli
-    --wallet.hotkey <your validator hotkey> # Must be created using the bittensor-cli
+python3 neurons/miner.py
+    --netuid 10  # The subnet id you want to connect to
+    --subtensor.network finney  # blockchain endpoint you want to connect
+    --wallet.name <your miner wallet> # name of your wallet
+    --wallet.hotkey <your miner hotkey> # hotkey name of your wallet
     --logging.debug # Run in debug mode, alternatively --logging.trace for trace mode
 ```
 
-</div>
+Important Note: Operating multiple miners from a single machine (using the same IP address) may result in reduced rewards. For optimal performance and reward maximization, it is recommended to run each miner on a separate machine.
 
----
+# Running Validator
 
-# Updating the template
-The code contains detailed documentation on how to update the template. Please read the documentation in each of the files to understand how to update the template. There are multiple TODOs in each of the files which you should read and update.
+Validators oversee data transfer processes and ensure the accuracy and integrity of data transfers.
 
-</div>
+## Prerequisites
+
+1. (Optional) I recommend to run subtensor instance locally
+```bash
+git clone https://github.com/opentensor/subtensor.git
+cd subtensor
+docker compose up --detach
+```
+
+2. For validating, you need to setup benchmark bots first.
+
+### Setup Benchmark Bots
+VValidators should set up at least 10 benchmark bots (more bots lead to faster validation). 
+Each bot should run on a different machine with a minimum of 24GB RAM and 1Gbps network bandwidth.
+
+Minimum hardware requirement:
+RAM: 24GB
+Network: 1Gbps
+
+Recommended hardware requirement:
+RAM: 32GB
+Network: 10Gbps
+
+```bash
+# To run the benchmark bot
+python3 neurons/benchmark.py
+    --netuid 10  # The subnet id you want to connect to
+    --subtensor.network local  # blockchain endpoint you want to connect
+    --wallet.name <your benchmark wallet> # name of your wallet
+    --wallet.hotkey <your benchmark hotkey> # hotkey name of your wallet, you can create a new wallet for benchmark and register in validator.config.json
+    --logging.debug # Run in debug mode, alternatively --logging.trace for trace mode
+```
+
+## Configuration with validator.config.json
+
+Modify validator.config.json with appropriate settings, including hotkeys for benchmark bots.
+```json
+{
+	"subtensor.network": "local",
+	"netuid": 10,
+	"wallet.name": "your wallet name",
+	"wallet.hotkey": "your validator hotkey",
+	"max_bandwidth": 10737418240,
+	"benchmark_hotkeys": [
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		""
+	]
+}
+```
+
+- max_bandwidth: The maximum bandwidth of your benchmark bots. (default 10 Gb)
+- benchmark_hotkeys: The hotkeys of your benchmark bots. (default 5 bots)
+
+## Running Validator Script
+
+```bash
+cd neurons
+# To run the validator
+python validator.py 
+    --netuid 10 # The subnet id you want to connect to
+    --subtensor.network local # blockchain endpoint you want to connect
+    --wallet.name <your validator wallet>  # name of your wallet
+    --wallet.hotkey <your validator hotkey> # hotkey name of your wallet
+    --logging.debug # Run in debug mode, alternatively --logging.trace for trace mode
+```
 
 ---
 
@@ -80,7 +173,7 @@ The code contains detailed documentation on how to update the template. Please r
 This repository is licensed under the MIT License.
 ```text
 # The MIT License (MIT)
-# Copyright © 2023 Yuma Rao
+# Copyright © 2023 ChainDude
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
@@ -96,3 +189,4 @@ This repository is licensed under the MIT License.
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 ```
+
