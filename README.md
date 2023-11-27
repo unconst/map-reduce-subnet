@@ -71,6 +71,10 @@ The minimal requirements for running a miner are
 - Network bandwidth: 1Gbps
 - RAM: 10GB
 
+Recommended hardware requirement:
+- Network bandwidth: 10Gbps
+- RAM: 32GB
+
 Note: Higher network bandwidth and RAM can lead to more rewards.
 
 ## Running Miner Script
@@ -109,12 +113,12 @@ VValidators should set up at least 10 benchmark bots (more bots lead to faster v
 Each bot should run on a different machine with a minimum of 24GB RAM and 1Gbps network bandwidth.
 
 Minimum hardware requirement:
-RAM: 24GB
-Network: 1Gbps
+- RAM: 24GB
+- Network: 1Gbps
 
 Recommended hardware requirement:
-RAM: 32GB
-Network: 10Gbps
+- RAM: 32GB
+- Network: 10Gbps
 
 ```bash
 # To run the benchmark bot
