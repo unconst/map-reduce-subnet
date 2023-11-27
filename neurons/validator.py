@@ -338,7 +338,7 @@ def main( config ):
                 synapse.job.status = "init"
                 
                 # Choose available miners to join.
-                miners = [(int(uid), axon) for uid, axon, miner in zip(metagraph.uids, metagraph.axons, miner_status) if axon.is_serving and ((miner['status'] == 'available' and calculate_bandwidth_from_free_memory(miner.get('free_memory',0)) >= synapse.job.bandwidth) or (miner['status'] == 'benchmarked' and miner['bandwidth'] >= synapse.job.bandwidth))]
+                miners = [(int(uid), axon) for uid, axon, miner in zip(metagraph.uids, metagraph.axons, miner_status) if axon.is_serving and ((miner['status'] == 'available' and utils.calc_bandwidth_from_memory(miner.get('free_memory',0)) >= synapse.job.bandwidth) or (miner['status'] == 'benchmarked' and miner['bandwidth'] >= synapse.job.bandwidth))]
                 bt.logging.info(f"Available miners to join: {miners}")
                 print(wallet, miners, synapse.job)
                 process = mp.Process(target=start_master_process, args=(input_queue, output_queue, wallet, miners, synapse.job, False))
