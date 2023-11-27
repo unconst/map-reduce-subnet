@@ -9,6 +9,11 @@ parser = ArgumentParser()
 parser.add_argument('--validator.uid', type = int, default= 0, help='Validator UID')
 parser.add_argument('--netuid', type = int, default=10, help='Map Reduce Subnet NetUID')
 
+bt.subtensor.add_args(parser)
+bt.logging.add_args(parser)
+bt.wallet.add_args(parser)
+bt.axon.add_args(parser)
+
 config = bt.config(
     parser=parser
 )
