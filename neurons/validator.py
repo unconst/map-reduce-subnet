@@ -299,7 +299,7 @@ def main( config ):
             return synapse
 
     def blacklist_request_benchmark(synapse: mapreduce.protocol.RequestBenchmark) -> Tuple[bool, str]:
-        hotkey = synapse.dendriate.hotkey
+        hotkey = synapse.dendrite.hotkey
         # Check if the hotkey is benchmark_hotkey
         if hotkey not in validator_config['benchmark_hotkeys']:
             bt.logging.error(f"Hotkey {hotkey} is not benchmark_hotkey")
