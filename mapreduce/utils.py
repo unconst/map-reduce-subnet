@@ -155,10 +155,6 @@ def check_processes(processes, miner_status = None):
                 miner_uid = int(processes[key]['miners'][0][0])
                 if miner_status[miner_uid]['status'] == 'benchmarking':
                     miner_status[miner_uid]['status'] = 'unavailable'
-                    miner_status[miner_uid]['retry'] = miner_status[miner_uid].get('retry', 0) + 1
-                    bt.logging.warning(f"Benchmark for Miner {miner_uid} Retry: {miner_status[miner_uid]['retry']}")
-                    if miner_status[miner_uid]['retry'] > 3:
-                        miner_status[miner_uid] = 'failed'
             if 'miners' in processes[key]:
                 for (uid, _) in processes[key]['miners']:
                     if miner_status[int(uid)]['status'] == 'working':

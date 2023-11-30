@@ -150,6 +150,7 @@ def main( config ):
                     'speed': 0,
                     'status': 'unavailable',
                     'timestamp': 0,
+                    'retry': 0,
                 })
         else:
             for uid, hotkey in enumerate(metagraph.hotkeys):
@@ -160,10 +161,14 @@ def main( config ):
                     miner_status[uid]['speed'] = 0
                     miner_status[uid]['bandwidth'] = 0
                     miner_status[uid]['bandwidth_updated_at'] = 0
+                miner_status[uid]['retry'] = 0
         
     # Choose miner to benchmark
     def choose_miner():
-        available_miners = [miner for miner in miner_status if miner['status'] == 'available' or miner['status'] == 'speed_tested']
+        for miner in miner_status:
+            if miner['status'] == 'available' and miner['retry'] == 3:
+                miner['status'] = 'failed'
+        available_miners = [miner for miner in miner_status if miner['status'] == 'available']
         if len(available_miners) == 0:
             return None
         # choose an available miner randomly
@@ -232,7 +237,7 @@ def main( config ):
             synapse.miner_uid = -1
             return synapse
         else:
-            bt.logging.info(f"Benchmarking Miner UID: {miner['uid']}")
+            bt.logging.info(f"Benchmarking Miner UID: {miner['uid']}, Tried: {miner.get('retry', 0)}")
         
         # Set miner_uid
         synapse.miner_uid = miner['uid']
@@ -287,6 +292,7 @@ def main( config ):
             synapse.job = processes[hotkey]['job']
             synapse.job.rank = 1
             bt.logging.trace(synapse.job)
+            miner['retry'] = miner.get('retry', 0) + 1
             # create thread for waiting benchmark result
             thread = Thread(target=wait_for_benchmark_result, args=(hotkey, synapse.miner_uid, ))
             thread.start()
@@ -460,7 +466,7 @@ def main( config ):
     scores = torch.ones_like(metagraph.S, dtype=torch.float32)
     bt.logging.info(f"Weights: {scores}")
     
-    last_updated_block = subtensor.block
+    last_updated_block = subtensor.block - 90
     
     scores_file = "scores.pt"
     try:
