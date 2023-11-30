@@ -7,6 +7,7 @@ from mapreduce.utils import human_readable_size, set_gloo_socket_ifname
 import torch.multiprocessing as mp
 import bittensor as bt
 import mapreduce
+import os
 
 # This class is responsible for initializing the miner, setting up the process group, initializing groups,
 # scattering data to miners, gathering data from miners, reducing data from peers, and monitoring actions for the miner.
@@ -14,9 +15,11 @@ import mapreduce
 class MinerDist:
     # Initialize the miner with the given IP address
     # This method sets the IP address of the miner and sets the gloo socket interface name to the IP address.
-    def __init__(self, ip_address):
+    def __init__(self, ip_address, opened_ports):
         self.ip_address = ip_address
+        self.opened_ports = opened_ports
         set_gloo_socket_ifname(self.ip_address)
+        os.environ['GLOO_PORT_RANGE'] = opened_ports
 
     # Initialize the process group for the miner
     # This method sets up the process group for the miner using the job details.
@@ -114,7 +117,7 @@ class MinerDist:
                 break
             bt.logging.success(f"✅ Action: {action['type']} completed")
                 
-def start_miner_dist_process(queue: mp.Queue, external_ip: str, wallet: bt.wallet, job: mapreduce.protocol.Job):
+def start_miner_dist_process(queue: mp.Queue, external_ip: str, opened_ports: str, wallet: bt.wallet, job: mapreduce.protocol.Job):
     bt.logging.trace(job)
-    miner_dist = MinerDist(external_ip)
+    miner_dist = MinerDist(external_ip, opened_ports)
     miner_dist.initialize_process_group(job)

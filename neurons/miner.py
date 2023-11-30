@@ -42,6 +42,7 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( '--netuid', type = int, default = 10, help = "The chain subnet uid." )
     parser.add_argument( '--axon.port', type = int, default = 8091, help = "Default port" )
+    parser.add_argment ( '--port.range', type = str, default = '9000:9010', help = "Opened Port range" )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
     # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
@@ -168,7 +169,7 @@ def main( config ):
             # try to join the group
             bt.logging.info("🔵 Start Process ...")
             queue = mp.Queue()
-            process = mp.Process(target=start_miner_dist_process, args=(queue, axon.external_ip, wallet, synapse.job))
+            process = mp.Process(target=start_miner_dist_process, args=(queue, axon.external_ip, config.port.range, wallet, synapse.job))
             process.start()
             processes[synapse.job.client_hotkey] = {
                 'process': process,
