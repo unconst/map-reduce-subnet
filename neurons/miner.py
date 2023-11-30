@@ -27,7 +27,7 @@ from typing import Tuple
 import torch.multiprocessing as mp
 from dist_miner import start_miner_dist_process
 import mapreduce
-from mapreduce.utils import check_version, check_processes, human_readable_size, get_free_memory, get_my_version, is_process_running
+from mapreduce.utils import check_version, check_processes, human_readable_size, get_available_memory, get_my_version, is_process_running
 
 # import miner
 
@@ -142,7 +142,7 @@ def main( config ):
             synapse.version = get_my_version()
             return synapse
         # Get Free Memory and Calculate Bandwidth
-        synapse.free_memory = get_free_memory()
+        synapse.free_memory = get_available_memory()
         bt.logging.info(f"Free memory: {human_readable_size(synapse.free_memory)}")
         synapse.version = get_my_version()
         synapse.available = not is_process_running(processes)

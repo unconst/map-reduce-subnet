@@ -261,7 +261,7 @@ Retrieves the amount of free memory in the system.
 Returns:
     int: Free memory in bytes.
 """
-def get_free_memory():
+def get_available_memory():
     # Get the memory details
     memory = psutil.virtual_memory()
     # Free memory in bytes

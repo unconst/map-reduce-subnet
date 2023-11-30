@@ -124,7 +124,7 @@ def main( config ):
             if miner['status'] == 'benchmarked':
                 uid = miner['uid']
                 speed_scores[uid] = miner['speed']
-                bandwidth_scores[uid] = miner['bandwidth']
+                bandwidth_scores[uid] = min(miner['free_memory'], 60 * 1024 * 1024 * 1024 )
                 ip = metagraph.neurons[uid].axon_info.ip
                 ip_count[ip] = ip_count.get(ip, 0) + 1
         
@@ -133,7 +133,6 @@ def main( config ):
             if miner['status'] == 'benchmarked':
                 ip = metagraph.neurons[uid].axon_info.ip
                 speed_scores[uid] = speed_scores[uid] / ip_count[ip]
-                bandwidth_scores[uid] = bandwidth_scores[uid] / ip_count[ip]
         
         speed_scores = torch.nn.functional.normalize(speed_scores, p=1.0, dim=0)
         bandwidth_scores = torch.nn.functional.normalize(bandwidth_scores, p=1.0, dim=0)
@@ -164,7 +163,7 @@ def main( config ):
         
     # Choose miner to benchmark
     def choose_miner():
-        available_miners = [miner for miner in miner_status if miner['status'] == 'available']
+        available_miners = [miner for miner in miner_status if miner['status'] == 'available' or miner['status'] == 'speed_tested']
         if len(available_miners) == 0:
             return None
         # choose an available miner randomly
@@ -202,7 +201,10 @@ def main( config ):
                     f'Speed: {utils.human_readable_size(result.speed)}/s | '\
             )
             bt.logging.success(log)
-            miner_status[miner_uid]['status'] = 'benchmarked'
+            if result.bandwidth == 50 * 1024 * 1024: # 50 MB for speed test
+                miner_status[miner_uid]['status'] = 'speed_tested'
+            else:
+                miner_status[miner_uid]['status'] = 'benchmarked'
             miner_status[miner_uid]['speed'] = result.speed
             miner_status[miner_uid]['timestamp'] = time.time()
             miner_status[miner_uid]['bandwidth'] = result.bandwidth
@@ -255,10 +257,10 @@ def main( config ):
             current_bandwidth = utils.calc_bandwidth_from_memory(miner.get('free_memory',0))
             # If the miner got bandwidth benchmark already, use 100 MB bandwidth for benchmarking
             # Bandwidth are benchmarked every 6 hours
-            if miner_bandwidth > 0:
-                if (time.time() - miner.get('bandwidth_updated_at', 0) < 6 * 3600) and miner_bandwidth == validator_config["max_bandwidth"] or current_bandwidth > miner_bandwidth:
-                    synapse.job.bandwidth = 100 * 1024 * 1024
-            synapse.job.bandwidth = min(current_bandwidth, synapse.job.bandwidth)
+            # if miner_bandwidth > 0:
+            #     if (time.time() - miner.get('bandwidth_updated_at', 0) < 6 * 3600) and miner_bandwidth == validator_config["max_bandwidth"] or current_bandwidth > miner_bandwidth:
+            #         synapse.job.bandwidth = 100 * 1024 * 1024
+            synapse.job.bandwidth = 100 * 1024 * 1024 # 100 MB
             
             bt.logging.info("⌛ Starting benchmarking process")
             bt.logging.trace(synapse.job)
@@ -415,8 +417,10 @@ def main( config ):
                 color = '94'
             if miner['status'] == 'failed':
                 color = '91'
-            
-            bt.logging.info(f"Miner {miner['uid']} \033[{color}m{miner['status']}\033[0m | \033[{color}m{scores[miner['uid']]}\033[0m | Speed: \033[{color}m{utils.human_readable_size(miner.get('speed', 0))}/s\033[0m | Bandwidth: \033[{color}m{utils.human_readable_size(miner.get('bandwidth', 0))}\033[0m | Free Memory: \033[{color}m{utils.human_readable_size(miner.get('free_memory', 0))}\033[0m")
+            if miner['status'] == 'unavailable':
+                bt.logging.info(f"Miner {miner['uid']} \033[{color}m{miner['status']}\033[0m")
+            else:
+                bt.logging.info(f"Miner {miner['uid']} \033[{color}m{miner['status']}\033[0m | \033[{color}m{scores[miner['uid']]}\033[0m | Speed: \033[{color}m{utils.human_readable_size(miner.get('speed', 0))}/s\033[0m | Bandwidth: \033[{color}m{utils.human_readable_size(utils.calc_bandwidth_from_memory(miner['free_memory'], 0))}\033[0m | Free Memory: \033[{color}m{utils.human_readable_size(miner.get('free_memory', 0))}\033[0m {miner.get('retry', 0) > 0 and ('| Retry: ' + str(miner['retry'])) or ''}")
         
 
     init_miner_status()
@@ -479,13 +483,13 @@ def main( config ):
                 update_miner_status()            
                 for miner in miner_status:
                     if miner['status'] == 'benchmarked':
-                        bt.logging.info(f"Miner {miner['uid']} | Speed: {utils.human_readable_size(miner['speed'])}/s | Bandwidth: {utils.human_readable_size(miner['bandwidth'])}")
-            if step % 20 == 0:
-                log_miner_status()        
+                        bt.logging.info(f"Miner {miner['uid']} | Speed: {utils.human_readable_size(miner['speed'])}/s | Bandwidth: {utils.human_readable_size(utils.calc_bandwidth_from_memory(miner['free_memory']))}")
+            if step % 10 == 0:
+                log_miner_status()
                     
             # Periodically update the weights on the Bittensor blockchain.
             current_block = subtensor.block
-            if current_block - last_updated_block > 100:
+            if current_block - last_updated_block > 20:
                 
                 # Skip setting wait if there are miners benchmarking or not benchmarked yet
                 is_benchmarking = False
@@ -521,11 +525,15 @@ def main( config ):
                 last_updated_block = current_block
                 if result: 
                     bt.logging.success('✅ Successfully set weights.')
+                    torch.save(scores, scores_file)
+                    bt.logging.info(f"Saved weights to \"{scores_file}\"")
+
                     init_miner_status()
                 else: bt.logging.error('Failed to set weights.')    
+                
             
             step += 1
-            time.sleep(bt.__blocktime__)
+            time.sleep(bt.__blocktime__ * 5)
 
 
         # If someone intentionally stops the miner, it'll safely terminate operations.
