@@ -160,8 +160,8 @@ def check_processes(processes, miner_status = None):
                         miner_status[miner_uid] = 'failed'
             if 'miners' in processes[key]:
                 for uid in processes[key]['miners']:
-                    if miner_status[uid]['status'] == 'working':
-                        miner_status[uid]['status'] = 'available'
+                    if miner_status[int(uid)]['status'] == 'working':
+                        miner_status[int(uid)]['status'] = 'available'
             del processes[key]
         time.sleep(1)
         

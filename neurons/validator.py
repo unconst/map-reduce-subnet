@@ -420,7 +420,7 @@ def main( config ):
             if miner['status'] == 'unavailable':
                 bt.logging.info(f"Miner {miner['uid']} \033[{color}m{miner['status']}\033[0m")
             else:
-                bt.logging.info(f"Miner {miner['uid']} \033[{color}m{miner['status']}\033[0m | \033[{color}m{scores[miner['uid']]}\033[0m | Speed: \033[{color}m{utils.human_readable_size(miner.get('speed', 0))}/s\033[0m | Bandwidth: \033[{color}m{utils.human_readable_size(utils.calc_bandwidth_from_memory(miner['free_memory'], 0))}\033[0m | Free Memory: \033[{color}m{utils.human_readable_size(miner.get('free_memory', 0))}\033[0m {miner.get('retry', 0) > 0 and ('| Retry: ' + str(miner['retry'])) or ''}")
+                bt.logging.info(f"Miner {miner['uid']} \033[{color}m{miner['status']}\033[0m | \033[{color}m{scores[miner['uid']]}\033[0m | Speed: \033[{color}m{utils.human_readable_size(miner.get('speed', 0))}/s\033[0m | Bandwidth: \033[{color}m{utils.human_readable_size(utils.calc_bandwidth_from_memory(miner['free_memory']))}\033[0m | Free Memory: \033[{color}m{utils.human_readable_size(miner.get('free_memory', 0))}\033[0m {miner.get('retry', 0) > 0 and ('| Retry: ' + str(miner['retry'])) or ''}")
         
 
     init_miner_status()
@@ -489,7 +489,7 @@ def main( config ):
                     
             # Periodically update the weights on the Bittensor blockchain.
             current_block = subtensor.block
-            if current_block - last_updated_block > 20:
+            if current_block - last_updated_block > 100:
                 
                 # Skip setting wait if there are miners benchmarking or not benchmarked yet
                 is_benchmarking = False
