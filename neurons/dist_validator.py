@@ -86,8 +86,9 @@ class Validator:
                     backend='gloo',
                     rank=self.rank,
                     world_size=self.world_size,
-                    timeout=timedelta(seconds=30)
+                    timeout=timedelta(seconds=15)
                 )
+                dist.monitored_barrier(timeout=timedelta(seconds=15))
 
                 bt.logging.info(f"Process group initialized.")
                 # Init groups
