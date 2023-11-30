@@ -50,6 +50,7 @@ class Peer:
             ),
         )
         
+        bt.logging.info(f"External IP: {self.dendrite.external_ip}")
         set_gloo_socket_ifname(self.dendrite.external_ip)
 
         response: mapreduce.protocol.ConnectMaster = self.dendrite.query(
@@ -78,7 +79,7 @@ class Peer:
             backend='gloo',
             rank=self.rank,
             world_size=self.world_size,
-            timeout=timedelta(seconds=30)
+            timeout=timedelta(seconds=15)
         )
         bt.logging.info('Initialized process group')
         self.init_groups()
@@ -256,7 +257,7 @@ class Peer:
             backend='gloo',
             rank=self.rank,
             world_size=self.world_size,
-            timeout=timedelta(seconds=30)
+            timeout=timedelta(seconds=15)
         )
         bt.logging.info('Initialized process group')
         self.init_groups()

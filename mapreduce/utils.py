@@ -156,12 +156,13 @@ def check_processes(processes, miner_status = None):
                 if miner_status[miner_uid]['status'] == 'benchmarking':
                     miner_status[miner_uid]['status'] = 'unavailable'
                     miner_status[miner_uid]['retry'] = miner_status[miner_uid].get('retry', 0) + 1
-                    if miner_status[miner_uid]['retry'] > 5:
+                    bt.logging.warning(f"Benchmark for Miner {miner_uid} Retry: {miner_status[miner_uid]['retry']}")
+                    if miner_status[miner_uid]['retry'] > 3:
                         miner_status[miner_uid] = 'failed'
             if 'miners' in processes[key]:
-                for uid in processes[key]['miners']:
-                    if miner_status[uid]['status'] == 'working':
-                        miner_status[uid]['status'] = 'available'
+                for (uid, _) in processes[key]['miners']:
+                    if miner_status[int(uid)]['status'] == 'working':
+                        miner_status[int(uid)]['status'] = 'available'
             del processes[key]
         time.sleep(1)
         
@@ -253,7 +254,7 @@ def get_unused_port(start_port, end_port):
 Retrieves the amount of available bandwidth from the free memory.
 """
 def calc_bandwidth_from_memory(free_memory: int):
-    return max(int((free_memory - 300 * 1024 * 1024) / 2), 0)
+    return max(int((free_memory - 500 * 1024 * 1024) / 2), 0)
 
 """
 Retrieves the amount of free memory in the system.
@@ -261,7 +262,7 @@ Retrieves the amount of free memory in the system.
 Returns:
     int: Free memory in bytes.
 """
-def get_free_memory():
+def get_available_memory():
     # Get the memory details
     memory = psutil.virtual_memory()
     # Free memory in bytes
