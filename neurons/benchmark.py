@@ -6,8 +6,8 @@ import bittensor as bt
 from argparse import ArgumentParser
 import os
 
-# Maximum size for benchmarking, set to 10 GB
-benchmark_max_size = 10 * 1024 * 1024 * 1024 
+# Maximum size for benchmarking, set to 1 GB
+benchmark_max_size = 1 * 1024 * 1024 * 1024 
 
 # Setting up the argument parser
 parser = ArgumentParser()
