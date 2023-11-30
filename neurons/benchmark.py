@@ -1,10 +1,10 @@
 import torch.multiprocessing as mp
 import time
-from peer.peer import Peer
+from mapreduce.peer import Peer
+import mapreduce.utils as utils
 import bittensor as bt
 from argparse import ArgumentParser
 import os
-import mapreduce.utils as utils
 
 # Maximum size for benchmarking, set to 10 GB
 benchmark_max_size = 10 * 1024 * 1024 * 1024 
