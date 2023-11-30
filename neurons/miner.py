@@ -42,7 +42,7 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( '--netuid', type = int, default = 10, help = "The chain subnet uid." )
     parser.add_argument( '--axon.port', type = int, default = 8091, help = "Default port" )
-    parser.add_argment ( '--port.range', type = str, default = '9000:9010', help = "Opened Port range" )
+    parser.add_argument ( '--port.range', type = str, default = '9000:9010', help = "Opened Port range" )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
     # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
