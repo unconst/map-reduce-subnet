@@ -48,6 +48,7 @@ def get_config():
     bt.wallet.add_args(parser)
     # Adds axon specific arguments i.e. --axon.port ...
     bt.axon.add_args(parser)
+
     # Activating the parser to read any command-line inputs.
     config = bt.config(parser)
 
@@ -166,7 +167,7 @@ def main( config ):
     # Choose miner to benchmark
     def choose_miner():
         for miner in miner_status:
-            if miner['status'] == 'available' and miner['retry'] == 3:
+            if miner['status'] == 'available' and miner['retry'] >= 3:
                 miner['status'] = 'failed'
         available_miners = [miner for miner in miner_status if miner['status'] == 'available']
         if len(available_miners) == 0:
