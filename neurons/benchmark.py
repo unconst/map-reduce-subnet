@@ -75,7 +75,18 @@ def main():
         # Start the benchmarking process
         p = mp.Process(target=benchmark, args=(wallet, validator_uid, config.netuid, config.subtensor.network))
         p.start()
-        p.join()
+        # Wait for the process to complete, with a specified timeout
+        p.join(timeout=60)  # Set your desired timeout in seconds
+        
+        # Check if the process is still alive after the timeout
+        if p.is_alive():
+            # If the process is still running after the timeout, terminate it
+            bt.logging.warning("Benchmark process exceeded timeout, terminating...")
+            p.terminate()
+            # Wait a bit for the process to terminate
+            p.join()
+        
+        # Sleep for a short duration before starting the next process
         time.sleep(1)
 
 if __name__ == '__main__':
