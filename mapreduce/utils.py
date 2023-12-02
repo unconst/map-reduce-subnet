@@ -13,6 +13,11 @@ import torch
 import socket
 import psutil
 import random
+import codecs
+import re
+
+exit_flag = False
+exit_at = 0
 
 """
 Converts a size in bytes to a more human-readable format (e.g., KB, MB).
@@ -113,27 +118,45 @@ def get_my_version() -> mapreduce.protocol.Version:
         patch_version = int(patch)
     )
 
+
+def set_exit_flag():
+    global exit_flag
+    global exit_at
+    bt.logging.info("🧭 Auto Update is activated")
+    if exit_flag:
+        return
+    exit_flag = True
+    exit_at = time.time() + 3600
+
 """
 Checks if the provided version matches the current MapReduce protocol version.
 
 Args:
     version (mapreduce.protocol.Version): The version to check.
+    flag: major | minor | patch | no
 
 Returns:
     bool: True if the versions match, False otherwise.
 """
-def check_version( version: mapreduce.protocol.Version ) -> bool:
-        version_str = mapreduce.__version__
-        major, minor, patch = version_str.split('.')
-        validator_version_str = f"{version.major_version}.{version.minor_version}.{version.patch_version}"
-        if version.major_version != int(major):
-            bt.logging.error("🔴 Major version mismatch", f"miner: {version_str}, validator: {validator_version_str}")
-            return False
-        elif version.minor_version != int(minor):
-            bt.logging.warning("🟡 Minor version mismatch", f"miner: {version_str}, validator: {validator_version_str}")
-        elif version.patch_version != int(patch):
-            bt.logging.warning("🔵 Patch version mismatch", f"miner: {version_str}, validator: {validator_version_str}")
-        return True
+def check_version( version: mapreduce.protocol.Version, flag ) -> bool:
+    global exit_flag
+    version_str = mapreduce.__version__
+    major, minor, patch = version_str.split('.')
+    other_version_str = f"{version.major_version}.{version.minor_version}.{version.patch_version}"
+    if version.major_version != int(major):
+        bt.logging.error("🔴 Major version mismatch", f"yours: {version_str}, other's: {other_version_str}")
+        if version.major_version > int(major) and flag != 'no':
+            set_exit_flag()
+        return False
+    elif version.minor_version != int(minor):
+        bt.logging.warning("🟡 Minor version mismatch", f"yours: {version_str}, other's: {other_version_str}")
+        if version.minor_version > int(minor) and (flag == 'minor' or flag == 'patch'):
+            set_exit_flag()
+    elif version.patch_version != int(patch):
+        bt.logging.warning("🔵 Patch version mismatch", f"yours: {version_str}, other's: {other_version_str}")
+        if version.patch_version > int(patch) and flag == 'patch':
+            set_exit_flag()
+    return True
 
 """
 Checks the status of running processes and updates their status accordingly.
@@ -160,6 +183,14 @@ def check_processes(processes, miner_status = None):
                     if miner_status[int(uid)]['status'] == 'working':
                         miner_status[int(uid)]['status'] = 'available'
             del processes[key]
+        if exit_flag and len(processes) == 0:
+            update_repository()
+            bt.logging.info("🔁 Exiting process for update.")
+            print("\033[92m🔁 Exiting process for update.\033[0m")
+            os._exit(0)
+        if exit_flag and time.time() > exit_at:
+            bt.logging.warning("\033[93m🔁 Force exiting process for update.\033[0m")
+            os._exit(0)
         time.sleep(1)
         
 """
@@ -249,6 +280,7 @@ def get_unused_port(start_port, end_port):
 """
 Retrieves the amount of available bandwidth from the free memory.
 """
+
 def calc_bandwidth_from_memory(free_memory: int):
     return max(int((free_memory - 500 * 1024 * 1024) / 2), 0)
 
@@ -263,3 +295,31 @@ def get_available_memory():
     memory = psutil.virtual_memory()
     # Free memory in bytes
     return memory.free
+
+'''
+Check if the repository is up to date
+'''
+def update_repository(flag = 'patch'):
+    bt.logging.info("Updating repository")
+    os.system("git pull")
+    here = os.path.abspath(os.path.dirname(__file__))
+    with codecs.open(os.path.join(here, '__init__.py'), encoding='utf-8') as init_file:
+        version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", init_file.read(), re.M)
+        new_version = version_match.group(1)
+        bt.logging.success(f"current version: {mapreduce.__version__}, new version: {new_version}")
+        new_major, new_minor, new_patch = new_version.split('.')
+        major, minor, patch = mapreduce.__version__.split('.')
+        if new_version != mapreduce.__version__:
+            os.system("python -e pip install -e .")
+            os.system("python -e pip install -r requirements.txt")
+        if major != new_major:
+            return True
+        if flag == 'major':
+            return False
+        if minor != new_minor:
+            return True
+        if flag == 'minor':
+            return False
+        if patch != new_patch:
+            return True
+    return False

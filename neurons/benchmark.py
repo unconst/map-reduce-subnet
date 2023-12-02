@@ -14,6 +14,7 @@ parser = ArgumentParser()
 
 parser.add_argument('--validator.uid', type = int, help='Validator UID')
 parser.add_argument('--netuid', type = int, default = 10, help = "The chain subnet uid." )
+parser.add_argument( '--auto_update', default = 'patch', help = "Auto update" ) # major, minor, patch, no
 
 bt.subtensor.add_args(parser)
 bt.logging.add_args(parser)
@@ -88,6 +89,11 @@ def main():
         
         # Sleep for a short duration before starting the next process
         time.sleep(1)
+        if config.auto_update != "no":
+            if utils.update_repository():
+                bt.logging.success("🔁 Repository updated, exiting benchmark")
+                exit(0)
+            
 
 if __name__ == '__main__':
     # Check if there is enough free memory to run the benchmark

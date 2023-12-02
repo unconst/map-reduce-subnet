@@ -36,10 +36,11 @@ def get_config():
     """
     parser = argparse.ArgumentParser()
     # Adds override arguments for network and netuid.
-    parser.add_argument( '--subtensor.network', default = validator_config['subtensor.network'], help = "The subtensor network." )
-    parser.add_argument( '--netuid', type = int, default = validator_config['netuid'], help = "The chain subnet uid." )
-    parser.add_argument( '--wallet.name', default = validator_config['wallet.name'], help = "Wallet name" )
-    parser.add_argument( '--wallet.hotkey', default = validator_config['wallet.hotkey'], help = "Wallet hotkey" )
+    parser.add_argument( '--subtensor.network', default = validator_config.get('subtensor.network', 'finney'), help = "The subtensor network." )
+    parser.add_argument( '--netuid', type = int, default = validator_config.get('netuid', 10), help = "The chain subnet uid." )
+    parser.add_argument( '--wallet.name', default = validator_config.get('wallet.name', 'default'), help = "Wallet name" )
+    parser.add_argument( '--wallet.hotkey', default = validator_config.get('wallet.hotkey', 'default'), help = "Wallet hotkey" )
+    parser.add_argument( '--auto_update', default = validator_config.get('auto_update', 'minor'), help = "Auto update" ) # major, minor, patch, no
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
     # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
@@ -226,8 +227,13 @@ def main( config ):
         bt.logging.info(f"Benchmark request from {hotkey}")
                 
         # Version checking
-        if not utils.check_version(synapse.version):
+        if not utils.check_version(synapse.version, config.auto_update):
             synapse.version = utils.get_my_version()
+            return synapse
+        
+        if utils.exit_flag:
+            synapse.job.status = 'error'
+            synapse.job.reason = 'Validator prepares for update'
             return synapse
         
         # Choose un-benchmarked miner
@@ -321,8 +327,13 @@ def main( config ):
         bt.logging.info(f"Connecting request from {hotkey}")
         
         # Version checking
-        if not utils.check_version(synapse.version):
+        if not utils.check_version(synapse.version, config.auto_update):
             synapse.version = utils.get_my_version()
+            return synapse
+        
+        if utils.exit_flag:
+            synapse.job.status = 'error'
+            synapse.job.reason = 'Validator prepares for update'
             return synapse
         
         try:
@@ -391,7 +402,7 @@ def main( config ):
         
         bt.logging.info(f"Get benchmark result request from {hotkey}")
         # Version checking
-        if not utils.check_version(synapse.version):
+        if not utils.check_version(synapse.version, config.auto_update):
             synapse.version = utils.get_my_version()
             return synapse
         # Check if the master process is running
@@ -496,6 +507,7 @@ def main( config ):
                     
             # Periodically update the weights on the Bittensor blockchain.
             current_block = subtensor.block
+            bt.logging.info(f"Last updated block: {last_updated_block}, current block: {current_block}")
             if current_block - last_updated_block > 100:
                 
                 # Skip setting wait if there are miners benchmarking or not benchmarked yet
