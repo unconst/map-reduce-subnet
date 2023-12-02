@@ -43,6 +43,7 @@ def get_config():
     parser.add_argument( '--netuid', type = int, default = 10, help = "The chain subnet uid." )
     parser.add_argument( '--axon.port', type = int, default = 8091, help = "Default port" )
     parser.add_argument ( '--port.range', type = str, default = '9000:9010', help = "Opened Port range" )
+    parser.add_argument( '--auto_update', default = 'minor', help = "Auto update" ) # major, minor, patch, no
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
     # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
@@ -109,7 +110,6 @@ def main( config ):
     # The following functions control the miner's response to incoming requests.
     # The blacklist function decides if a request should be ignored.
     def blacklist_fn( synapse: mapreduce.protocol.Join ) -> Tuple[bool, str]:
-        # TODO(developer): Define how miners should blacklist requests. This Function 
         # Runs before the synapse data has been deserialized (i.e. before synapse.data is available).
         # The synapse is instead contructed via the headers of the request. It is important to blacklist
         # requests before they are deserialized to avoid wasting resources on requests that will be ignored.
@@ -139,13 +139,17 @@ def main( config ):
         # Check version of the synapse
         validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
         bt.logging.info(f"Validator {validator_uid} asks Miner Status")
-        if not check_version(synapse.version):
+        if not check_version(synapse.version, config.auto_update):
             synapse.version = get_my_version()
             return synapse
         # Get Free Memory and Calculate Bandwidth
         synapse.free_memory = get_available_memory()
         bt.logging.info(f"Free memory: {human_readable_size(synapse.free_memory)}")
         synapse.version = get_my_version()
+        
+        if mapreduce.utils.exit_flag:
+            synapse.available = False
+            return synapse
         synapse.available = not is_process_running(processes)
         return synapse
 
@@ -153,8 +157,12 @@ def main( config ):
         validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
         bt.logging.info(f"Validator {validator_uid} asks Joining Group")
         try:
-            if not check_version(synapse.version):
+            if not check_version(synapse.version, config.auto_update):
                 synapse.version = get_my_version()
+                return synapse
+            if mapreduce.utils.exit_flag:
+                synapse.joining = False
+                synapse.reason = 'Update'
                 return synapse
             if is_process_running(processes):
                 synapse.joining = False
@@ -210,10 +218,6 @@ def main( config ):
     # Start  starts the miner's axon, making it active on the network.
     bt.logging.info(f"Starting axon server on port: {config.axon.port}")
     axon.start()
-    
-    # Check processes
-    # thread = Thread(target=check_processes, args=(processes, ))
-    # thread.start()
 
     check_processes(processes)
 

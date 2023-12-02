@@ -4,6 +4,7 @@
 	"wallet.name": "your wallet name",
 	"wallet.hotkey": "your validator hotkey",
 	"max_bandwidth": 10737418240,
+	"auto_update": "minor",
 	"benchmark_hotkeys": [
 		"",
 		"",
