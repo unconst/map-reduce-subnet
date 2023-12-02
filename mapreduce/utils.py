@@ -294,7 +294,7 @@ def get_available_memory():
     # Get the memory details
     memory = psutil.virtual_memory()
     # Free memory in bytes
-    return memory.free
+    return memory.available
 
 '''
 Check if the repository is up to date

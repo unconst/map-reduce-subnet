@@ -97,6 +97,7 @@ def main():
 
 if __name__ == '__main__':
     # Check if there is enough free memory to run the benchmark
+    bt.logging.info(f"Available memory: {utils.human_readable_size(utils.get_available_memory())}")
     if utils.get_available_memory() < benchmark_max_size * 2:
         bt.logging.error("🔴 Not enough memory to run benchmark")
         exit(1)
