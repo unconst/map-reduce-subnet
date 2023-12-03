@@ -1,5 +1,4 @@
 # Import necessary libraries and modules
-import asyncio
 import os
 import time
 import argparse
