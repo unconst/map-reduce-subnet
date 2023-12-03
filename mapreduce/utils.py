@@ -122,11 +122,12 @@ def get_my_version() -> mapreduce.protocol.Version:
 def set_exit_flag():
     global exit_flag
     global exit_at
-    bt.logging.info("🧭 Auto Update is activated")
     if exit_flag:
+        bt.logging.info(f"🧭 Auto Update scheduled before {exit_at}")
         return
     exit_flag = True
-    exit_at = time.time() + 3600
+    exit_at = time.time() + 1800
+    bt.logging.info(f"🧭 Auto Update scheduled before {exit_at}")
 
 """
 Checks if the provided version matches the current MapReduce protocol version.
@@ -167,30 +168,37 @@ Args:
 """
 def check_processes(processes, miner_status = None):
     while True:
-        keys_to_delete = []
-        for key in processes:
-            process = processes[key]['process']
-            if not process.is_alive():
-                keys_to_delete.append(key)
-        for key in keys_to_delete:
-            bt.logging.info(f"🚩 Delete Process with key: {key}")
-            if miner_status and processes[key]['benchmarking']:
-                miner_uid = int(processes[key]['miners'][0][0])
-                if miner_status[miner_uid]['status'] == 'benchmarking':
-                    miner_status[miner_uid]['status'] = 'unavailable'
-            if 'miners' in processes[key]:
-                for (uid, _) in processes[key]['miners']:
-                    if miner_status[int(uid)]['status'] == 'working':
-                        miner_status[int(uid)]['status'] = 'available'
-            del processes[key]
-        if exit_flag and len(processes) == 0:
-            update_repository()
-            bt.logging.info("🔁 Exiting process for update.")
-            print("\033[92m🔁 Exiting process for update.\033[0m")
-            os._exit(0)
-        if exit_flag and time.time() > exit_at:
-            bt.logging.warning("\033[93m🔁 Force exiting process for update.\033[0m")
-            os._exit(0)
+        try:
+            keys_to_delete = []
+            for key in processes:
+                process = processes[key]['process']
+                if not process.is_alive():
+                    keys_to_delete.append(key)
+            for key in keys_to_delete:
+                bt.logging.info(f"🚩 Delete Process with key: {key}")
+                if miner_status and processes[key]['benchmarking']:
+                    miner_uid = int(processes[key]['miners'][0][0])
+                    if miner_status[miner_uid]['status'] == 'benchmarking':
+                        miner_status[miner_uid]['status'] = 'unavailable'
+                if 'miners' in processes[key]:
+                    for (uid, _) in processes[key]['miners']:
+                        if miner_status[int(uid)]['status'] == 'working':
+                            miner_status[int(uid)]['status'] = 'available'
+                del processes[key]
+            # Check if upgrade is needed
+            if exit_flag:
+                if len(processes) == 0:
+                    update_repository()
+                    bt.logging.info("🔁 Exiting process for update.")
+                    print("\033[92m🔁 Exiting process for update.\033[0m")
+                    os._exit(0)
+                else:
+                    bt.logging.info(f"⌛️ Waiting for {len(processes)} processes to finish.")
+                if time.time() > exit_at:
+                    bt.logging.warning("\033[93m🔁 Force exiting process for update.\033[0m")
+                    os._exit(0)
+        except Exception as e:
+            bt.logging.error(f"Error checking processes: {e}")    
         time.sleep(1)
         
 """
