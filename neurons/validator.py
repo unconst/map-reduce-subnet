@@ -1,4 +1,5 @@
 # Import necessary libraries and modules
+import asyncio
 import os
 import time
 import argparse
@@ -469,11 +470,10 @@ def main( config ):
     thread = Thread(target=utils.check_processes, args=(processes, miner_status))
     thread.start()
 
-    # Step 6: Keep the miner alive
-    # This loop maintains the miner's operations until intentionally stopped.
+    # Step 6: Keep the validator alive
+    # This loop maintains the validator's operations until intentionally stopped.
     bt.logging.info(f"Starting main loop")
     step = 0
-
 
     scores = torch.ones_like(metagraph.S, dtype=torch.float32)
     bt.logging.info(f"Weights: {scores}")
@@ -520,7 +520,7 @@ def main( config ):
                         
                 if is_benchmarking:
                     step += 1
-                    time.sleep(bt.__blocktime__)
+                    time.sleep(bt.__blocktime__ * 5)
                     continue
                 
                 bt.logging.success("Updating score ...")                
@@ -539,8 +539,8 @@ def main( config ):
                     wallet = wallet, # Wallet to sign set weights using hotkey.
                     uids = metagraph.uids, # Uids of the miners to set weights for.
                     weights = weights, # Weights to set for the miners. 
-                    wait_for_inclusion = True
                 )
+                
                 last_updated_block = current_block
                 if result: 
                     bt.logging.success('✅ Successfully set weights.')
