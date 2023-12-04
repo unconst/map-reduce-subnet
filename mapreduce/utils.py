@@ -15,6 +15,7 @@ import psutil
 import random
 import codecs
 import re
+import traceback
 
 exit_flag = False
 exit_at = 0
@@ -198,7 +199,8 @@ def check_processes(processes, miner_status = None):
                     bt.logging.warning("\033[93m🔁 Force exiting process for update.\033[0m")
                     os._exit(0)
         except Exception as e:
-            bt.logging.error(f"Error checking processes: {e}")    
+            bt.logging.error(f"Error checking processes: {e}")
+            traceback.print_exc()
         time.sleep(1)
         
 """
