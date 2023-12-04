@@ -144,7 +144,7 @@ class Validator:
             job=miner_job,
             ranks=ranks
         )
-        self.job.miners = [ int(uid) for (uid, _axon) in self.available_miners]
+        self.job.miners = [ (int(uid), _axon) for (uid, _axon) in self.available_miners]
         
         axons = [ axon for (uid, axon) in self.available_miners]
         responses = self.dendrite.query(axons, join)
