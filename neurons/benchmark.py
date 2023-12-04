@@ -1,6 +1,6 @@
 import torch.multiprocessing as mp
 import time
-from mapreduce.peer import Peer
+from mapreduce import Peer
 import mapreduce.utils as utils
 import bittensor as bt
 from argparse import ArgumentParser

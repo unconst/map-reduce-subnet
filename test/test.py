@@ -1,7 +1,7 @@
 import torch.multiprocessing as mp
 import torch
 import time
-from mapreduce.peer import Peer
+from mapreduce import Peer
 import bittensor as bt
 from argparse import ArgumentParser
 
@@ -76,5 +76,5 @@ def main():
         p.join()
 
 if __name__ == '__main__':
-    mp.set_start_method('spawn')  # This is often necessary in PyTorch multiprocessing
+    # mp.set_start_method('spawn')  # This is often necessary in PyTorch multiprocessing
     main()

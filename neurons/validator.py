@@ -331,6 +331,8 @@ def main( config ):
             synapse.version = utils.get_my_version()
             return synapse
         
+        synapse.version = utils.get_my_version()
+        
         if utils.exit_flag:
             synapse.job.status = 'error'
             synapse.job.reason = 'Validator prepares for update'
@@ -376,7 +378,7 @@ def main( config ):
                     'miners': job.miners
                 }
                 bt.logging.info(f"Connected miners: {job.miners}")
-                for uid in job.miners:
+                for (uid, _) in job.miners:
                     miner_status[uid]['status'] = 'working'
             else:
                 if hotkey not in processes:
