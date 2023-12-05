@@ -112,8 +112,8 @@ docker compose up --detach
 2. For validating, you need to setup benchmark bots first.
 
 ### Setup Benchmark Bots
-VValidators should set up at least 3 benchmark bots (more bots lead to faster validation). 
-Each bot should run on a different machine with a minimum of 24GB RAM and 1Gbps network bandwidth.
+Validators should set up at least 3 benchmark bots (more bots lead to faster validation). 
+Each bot should run on a different machine with a minimum of 4GB RAM and 1Gbps network bandwidth.
 
 Minimum hardware requirement:
 - RAM: 4GB
