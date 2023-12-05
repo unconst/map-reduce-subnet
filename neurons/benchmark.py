@@ -53,12 +53,12 @@ Args:
     netuid (int): Network unique identifier.
     network (str): Network information.
 """
-def benchmark(wallet, validator_uid, netuid, network ):
+def benchmark(wallet, validator_uid, network ):
     bt.logging.info("")
     bt.logging.info(f"Starting benchmarking bot")
     
     # Initialize Peer instance
-    peer = Peer(1, 1, 0, wallet, validator_uid, netuid, network, benchmark_max_size = benchmark_max_size)
+    peer = Peer(1, 1, 0, wallet, validator_uid, network, benchmark_max_size = benchmark_max_size)
 
     # Initialize process group with the fetched configuration
     if not peer.benchmark():
@@ -74,7 +74,7 @@ The main function to continuously run the benchmarking process.
 def main():
     while True: 
         # Start the benchmarking process
-        p = mp.Process(target=benchmark, args=(wallet, validator_uid, config.netuid, config.subtensor.network))
+        p = mp.Process(target=benchmark, args=(wallet, validator_uid, config.subtensor.network))
         p.start()
         # Wait for the process to complete, with a specified timeout
         p.join(timeout=60)  # Set your desired timeout in seconds
