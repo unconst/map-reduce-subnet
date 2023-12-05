@@ -112,25 +112,24 @@ docker compose up --detach
 2. For validating, you need to setup benchmark bots first.
 
 ### Setup Benchmark Bots
-VValidators should set up at least 10 benchmark bots (more bots lead to faster validation). 
+VValidators should set up at least 3 benchmark bots (more bots lead to faster validation). 
 Each bot should run on a different machine with a minimum of 24GB RAM and 1Gbps network bandwidth.
 
 Minimum hardware requirement:
-- RAM: 24GB
+- RAM: 4GB
 - Network: 1Gbps
 
 Recommended hardware requirement:
-- RAM: 32GB
+- RAM: 8GB
 - Network: 10Gbps
 
 ```bash
 # To run the benchmark bot
 python3 neurons/benchmark.py
-    --netuid 10  # The subnet id you want to connect to
     --subtensor.network local  # blockchain endpoint you want to connect
     --wallet.name <your benchmark wallet> # name of your wallet
     --wallet.hotkey <your benchmark hotkey> # hotkey name of your wallet, you can create a new wallet for benchmark and register in validator.config.json
-    --logging.debug # Run in debug mode, alternatively --logging.trace for trace mode
+    --validator.uid <your validator uid> # your validator uid
 ```
 
 ## Configuration with validator.config.json
@@ -148,6 +147,7 @@ cp example.validator.config.json validator.config.json
 	"wallet.name": "your wallet name",
 	"wallet.hotkey": "your validator hotkey",
 	"max_bandwidth": 10737418240,
+	"auto_update": "patch",
 	"benchmark_hotkeys": [
 		"",
 		"",
