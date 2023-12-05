@@ -113,6 +113,7 @@ docker compose up --detach
 
 ### Setup Benchmark Bots
 Validators should set up at least 3 benchmark bots (more bots lead to faster validation). 
+You can install one of the bots directly on your validator machine. 
 Each bot should run on a different machine with a minimum of 4GB RAM and 1Gbps network bandwidth.
 
 Minimum hardware requirement:
