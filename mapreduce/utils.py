@@ -196,6 +196,7 @@ def check_processes(processes, miner_status = None):
                 else:
                     bt.logging.info(f"⌛️ Waiting for {len(processes)} processes to finish.")
                 if time.time() > exit_at:
+                    update_repository()
                     bt.logging.warning("\033[93m🔁 Force exiting process for update.\033[0m")
                     os._exit(0)
         except Exception as e:

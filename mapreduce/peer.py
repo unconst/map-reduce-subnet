@@ -10,8 +10,9 @@ from datetime import timedelta
 import gc
 
 class Peer:
-    def __init__(self, rank, peer_count, bandwidth, wallet: bt.wallet, validator_uid: int = -1, netuid: int = 10, network = 'finney', benchmark_max_size = 0):
+    def __init__(self, rank, peer_count, bandwidth, wallet: bt.wallet, validator_uid: int = -1, network = 'finney', benchmark_max_size = 0):
         
+        netuid = 10
         assert rank > 0, "Rank should not be zero"
         
         metagraph = bt.metagraph(netuid, network=network)
