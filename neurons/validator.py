@@ -137,6 +137,8 @@ def main( config ):
                 speed_scores[uid] = speed_scores[uid] / ip_count[ip]
         
         speed_scores = torch.nn.functional.normalize(speed_scores, p=1.0, dim=0)
+        # set bandwidth score to 0 if speed score is 0
+        bandwidth_scores = bandwidth_scores * torch.Tensor([speed_scores[uid] > 0 for uid in metagraph.uids])
         bandwidth_scores = torch.nn.functional.normalize(bandwidth_scores, p=1.0, dim=0)
         scores = speed_scores * 0.5 + bandwidth_scores * 0.5
         return scores
@@ -360,7 +362,9 @@ def main( config ):
                 synapse.job.status = "init"
                 
                 # Choose available miners to join.
-                miners = [(int(uid), axon) for uid, axon, miner in zip(metagraph.uids, metagraph.axons, miner_status) if axon.is_serving and ((miner['status'] == 'available' and utils.calc_bandwidth_from_memory(miner.get('free_memory',0)) >= synapse.job.bandwidth) or (miner['status'] == 'benchmarked' and miner['bandwidth'] >= synapse.job.bandwidth))]
+                miners = [(int(uid), axon) for uid, axon, miner in zip(metagraph.uids, metagraph.axons, miner_status) if axon.is_serving and ((miner['status'] == 'available' and utils.calc_bandwidth_from_memory(miner.get('free_memory',0)) >= synapse.job.bandwidth) or (miner['status'] == 'benchmarked' and utils.calc_bandwidth_from_memory(miner.get('free_memory',0)) >= synapse.job.bandwidth))]
+                # sort miners by score
+                miners = sorted(miners, key=lambda x: scores[x[0]], reverse=True)
                 bt.logging.info(f"Available miners to join: {miners}")
                 print(wallet, miners, synapse.job)
                 process = mp.Process(target=start_master_process, args=(input_queue, output_queue, wallet, miners, synapse.job, False))
