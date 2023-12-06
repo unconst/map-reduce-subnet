@@ -59,7 +59,7 @@ This repository requires python3.8 or higher. To install, simply clone this repo
 ```bash
 git clone https://github.com/dream-well/map-reduce-subnet
 cd map-reduce-subnet
-python -m pip install -e .
+python3 -m pip install -e .
 ```
 
 
@@ -172,7 +172,7 @@ cp example.validator.config.json validator.config.json
 ```bash
 cd neurons
 # To run the validator
-python validator.py 
+python3 validator.py 
     --netuid 10 # The subnet id you want to connect to
     --subtensor.network local # blockchain endpoint you want to connect
     --wallet.name <your validator wallet>  # name of your wallet
@@ -187,7 +187,7 @@ python validator.py
 ```bash
 git clone https://github.com/dream-well/map-reduce-subnet
 cd map-reduce-subnet
-python -m pip install -e .
+python3 -m pip install -e .
 ```
 
 ```python
