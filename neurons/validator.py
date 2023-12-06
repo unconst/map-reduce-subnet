@@ -170,7 +170,7 @@ def main( config ):
     # Choose miner to benchmark
     def choose_miner():
         for miner in miner_status:
-            if miner['status'] == 'available' and miner['retry'] >= 3:
+            if miner['status'] == 'available' and miner['retry'] >= 2:
                 miner['status'] = 'failed'
         available_miners = [miner for miner in miner_status if miner['status'] == 'available']
         if len(available_miners) == 0:
@@ -229,11 +229,11 @@ def main( config ):
         bt.logging.info(f"Benchmark request from {hotkey}")
                 
         # Version checking
-        if not utils.check_version(synapse.version, config.auto_update):
+        if not utils.check_version(synapse.version):
             synapse.version = utils.get_my_version()
             return synapse
         
-        if utils.exit_flag:
+        if utils.update_flag:
             synapse.job.status = 'error'
             synapse.job.reason = 'Validator prepares for update'
             return synapse
@@ -329,13 +329,13 @@ def main( config ):
         bt.logging.info(f"Connecting request from {hotkey}")
         
         # Version checking
-        if not utils.check_version(synapse.version, config.auto_update):
+        if not utils.check_version(synapse.version):
             synapse.version = utils.get_my_version()
             return synapse
         
         synapse.version = utils.get_my_version()
         
-        if utils.exit_flag:
+        if utils.update_flag:
             synapse.job.status = 'error'
             synapse.job.reason = 'Validator prepares for update'
             return synapse
@@ -408,7 +408,7 @@ def main( config ):
         
         bt.logging.info(f"Get benchmark result request from {hotkey}")
         # Version checking
-        if not utils.check_version(synapse.version, config.auto_update):
+        if not utils.check_version(synapse.version):
             synapse.version = utils.get_my_version()
             return synapse
         # Check if the master process is running
@@ -507,7 +507,7 @@ def main( config ):
                 for miner in miner_status:
                     if miner['status'] == 'benchmarked':
                         bt.logging.info(f"Miner {miner['uid']} | Speed: {utils.human_readable_size(miner['speed'])}/s | Bandwidth: {utils.human_readable_size(utils.calc_bandwidth_from_memory(miner['free_memory']))}")
-            if step % 10 == 0:
+            if step % 20 == 0:
                 log_miner_status()
                     
             # Periodically update the weights on the Bittensor blockchain.
@@ -523,9 +523,9 @@ def main( config ):
                         is_benchmarking = True
                         break
                         
-                if is_benchmarking:
+                if is_benchmarking and current_block - last_updated_block < 360:
                     step += 1
-                    time.sleep(bt.__blocktime__ * 5)
+                    time.sleep(bt.__blocktime__)
                     continue
                 
                 bt.logging.success("Updating score ...")                
@@ -546,18 +546,23 @@ def main( config ):
                     weights = weights, # Weights to set for the miners. 
                 )
                 
-                last_updated_block = current_block
                 if result: 
                     bt.logging.success('✅ Successfully set weights.')
                     torch.save(scores, scores_file)
                     bt.logging.info(f"Saved weights to \"{scores_file}\"")
-
+                    last_updated_block = current_block
                     init_miner_status()
+                    
                 else: bt.logging.error('Failed to set weights.')    
                 
+            # Check for auto update
+            if step % 5 == 0 and config.auto_update != "no":
+                if utils.update_repository(config.auto_update):
+                    bt.logging.success("🔁 Repository updated, exiting validator")
+                    exit(0)
             
             step += 1
-            time.sleep(bt.__blocktime__ * 5)
+            time.sleep(bt.__blocktime__)
 
 
         # If someone intentionally stops the miner, it'll safely terminate operations.

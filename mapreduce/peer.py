@@ -1,5 +1,6 @@
 # peerlib.py
 
+import os
 import torch.distributed as dist
 import torch
 from math import ceil
@@ -10,7 +11,7 @@ from datetime import timedelta
 import gc
 
 class Peer:
-    def __init__(self, rank, peer_count, bandwidth, wallet: bt.wallet, validator_uid: int = -1, network = 'finney', benchmark_max_size = 0):
+    def __init__(self, rank, peer_count, bandwidth, wallet: bt.wallet, validator_uid: int = -1, network = 'finney', port_range = "9000:9010", benchmark_max_size = 0):
         
         netuid = 10
         assert rank > 0, "Rank should not be zero"
@@ -33,7 +34,11 @@ class Peer:
         self.validator_port = None
         self.wallet = wallet
         self.dendrite: bt.dendrite = bt.dendrite(wallet=self.wallet)
+        self.port_range = port_range
         self.benchmark_max_size = int(benchmark_max_size)
+        
+        # Set port range for gloo
+        os.environ['GLOO_PORT_RANGE'] = port_range
         
         if benchmark_max_size:
             data_length = int(benchmark_max_size / 4)
@@ -80,7 +85,7 @@ class Peer:
             backend='gloo',
             rank=self.rank,
             world_size=self.world_size,
-            timeout=timedelta(seconds=15)
+            timeout=timedelta(seconds=10)
         )
         bt.logging.info('Initialized process group')
         self.init_groups()
@@ -258,7 +263,7 @@ class Peer:
             backend='gloo',
             rank=self.rank,
             world_size=self.world_size,
-            timeout=timedelta(seconds=15)
+            timeout=timedelta(seconds=10)
         )
         bt.logging.info('Initialized process group')
         self.init_groups()
