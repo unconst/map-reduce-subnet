@@ -16,9 +16,10 @@ import random
 import codecs
 import re
 import traceback
+from datetime import datetime
 
-exit_flag = False
-exit_at = 0
+update_flag = False
+update_at = 0
 
 """
 Converts a size in bytes to a more human-readable format (e.g., KB, MB).
@@ -120,15 +121,23 @@ def get_my_version() -> mapreduce.protocol.Version:
     )
 
 
-def set_exit_flag():
-    global exit_flag
-    global exit_at
-    if exit_flag:
-        bt.logging.info(f"🧭 Auto Update scheduled before {exit_at}")
+def timestamp_to_datestring(timestamp):
+    # Convert the timestamp to a datetime object
+    dt_object = datetime.fromtimestamp(timestamp)
+
+    # Format the datetime object as an ISO 8601 string
+    iso_date_string = dt_object.isoformat()
+    return iso_date_string
+
+def set_update_flag():
+    global update_flag
+    global update_at
+    if update_flag:
+        bt.logging.info(f"🧭 Auto Update scheduled on {timestamp_to_datestring(update_at)}")
         return
-    exit_flag = True
-    exit_at = time.time() + 1800
-    bt.logging.info(f"🧭 Auto Update scheduled before {exit_at}")
+    update_flag = True
+    update_at = time.time() + 1800
+    bt.logging.info(f"🧭 Auto Update scheduled on {timestamp_to_datestring(update_at)}")
 
 """
 Checks if the provided version matches the current MapReduce protocol version.
@@ -140,24 +149,18 @@ Args:
 Returns:
     bool: True if the versions match, False otherwise.
 """
-def check_version( version: mapreduce.protocol.Version, flag ) -> bool:
-    global exit_flag
+def check_version( version: mapreduce.protocol.Version ) -> bool:
+    global update_flag
     version_str = mapreduce.__version__
     major, minor, patch = version_str.split('.')
     other_version_str = f"{version.major_version}.{version.minor_version}.{version.patch_version}"
     if version.major_version != int(major):
         bt.logging.error("🔴 Major version mismatch", f"yours: {version_str}, other's: {other_version_str}")
-        if version.major_version > int(major) and flag != 'no':
-            set_exit_flag()
         return False
     elif version.minor_version != int(minor):
         bt.logging.warning("🟡 Minor version mismatch", f"yours: {version_str}, other's: {other_version_str}")
-        if version.minor_version > int(minor) and (flag == 'minor' or flag == 'patch'):
-            set_exit_flag()
     elif version.patch_version != int(patch):
         bt.logging.warning("🔵 Patch version mismatch", f"yours: {version_str}, other's: {other_version_str}")
-        if version.patch_version > int(patch) and flag == 'patch':
-            set_exit_flag()
     return True
 
 """
@@ -187,7 +190,7 @@ def check_processes(processes, miner_status = None):
                             miner_status[int(uid)]['status'] = 'available'
                 del processes[key]
             # Check if upgrade is needed
-            if exit_flag:
+            if update_flag:
                 if len(processes) == 0:
                     update_repository()
                     bt.logging.info("🔁 Exiting process for update.")
@@ -195,7 +198,7 @@ def check_processes(processes, miner_status = None):
                     os._exit(0)
                 else:
                     bt.logging.info(f"⌛️ Waiting for {len(processes)} processes to finish.")
-                if time.time() > exit_at:
+                if time.time() > update_at:
                     update_repository()
                     bt.logging.warning("\033[93m🔁 Force exiting process for update.\033[0m")
                     os._exit(0)
@@ -321,8 +324,7 @@ def update_repository(flag = 'patch'):
         new_major, new_minor, new_patch = new_version.split('.')
         major, minor, patch = mapreduce.__version__.split('.')
         if new_version != mapreduce.__version__:
-            os.system("python -e pip install -e .")
-            os.system("python -e pip install -r requirements.txt")
+            os.system("python3 -e pip install -e .")
         if major != new_major:
             return True
         if flag == 'major':

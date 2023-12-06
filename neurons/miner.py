@@ -26,8 +26,7 @@ import bittensor as bt
 from typing import Tuple
 import torch.multiprocessing as mp
 from dist_miner import start_miner_dist_process
-import mapreduce
-from mapreduce.utils import check_version, check_processes, human_readable_size, get_available_memory, get_my_version, is_process_running
+from mapreduce import utils, protocol
 
 # import miner
 
@@ -96,7 +95,7 @@ def main( config ):
 
     # metagraph provides the network's current state, holding state about other participants in a subnet.
     metagraph = subtensor.metagraph(config.netuid)
-    bt.logging.info(f"Metagraph: {metagraph} {metagraph.axons}")
+    # bt.logging.info(f"Metagraph: {metagraph} {metagraph.axons}")
 
     if wallet.hotkey.ss58_address not in metagraph.hotkeys:
         bt.logging.error(f"\nYour validator: {wallet} if not registered to chain connection: {subtensor} \nRun btcli register and try again. ")
@@ -109,7 +108,7 @@ def main( config ):
     # Step 4: Set up miner functionalities
     # The following functions control the miner's response to incoming requests.
     # The blacklist function decides if a request should be ignored.
-    def blacklist_fn( synapse: mapreduce.protocol.Join ) -> Tuple[bool, str]:
+    def blacklist_fn( synapse: protocol.Join ) -> Tuple[bool, str]:
         # Runs before the synapse data has been deserialized (i.e. before synapse.data is available).
         # The synapse is instead contructed via the headers of the request. It is important to blacklist
         # requests before they are deserialized to avoid wasting resources on requests that will be ignored.
@@ -128,47 +127,47 @@ def main( config ):
 
     # The priority function determines the order in which requests are handled.
     # More valuable or higher-priority requests are processed before others.
-    def priority_fn( synapse: mapreduce.protocol.Join ) -> float:
+    def priority_fn( synapse: protocol.Join ) -> float:
         caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
         prirority = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
         bt.logging.trace(f'Prioritizing {synapse.dendrite.hotkey} with value: ', prirority)
         return prirority
 
     # This is the core miner function, which decides the miner's response to a valid, high-priority request.
-    def get_miner_status( synapse: mapreduce.protocol.MinerStatus ) -> mapreduce.protocol.MinerStatus:
+    def get_miner_status( synapse: protocol.MinerStatus ) -> protocol.MinerStatus:
         # Check version of the synapse
         validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
         bt.logging.info(f"Validator {validator_uid} asks Miner Status")
-        if not check_version(synapse.version, config.auto_update):
-            synapse.version = get_my_version()
+        if not utils.check_version(synapse.version):
+            synapse.version = utils.get_my_version()
             return synapse
         # Get Free Memory and Calculate Bandwidth
-        synapse.free_memory = get_available_memory()
-        bt.logging.info(f"Free memory: {human_readable_size(synapse.free_memory)}")
-        synapse.version = get_my_version()
+        synapse.free_memory = utils.get_available_memory()
+        bt.logging.info(f"Free memory: {utils.human_readable_size(synapse.free_memory)}")
+        synapse.version = utils.get_my_version()
         
-        if mapreduce.utils.exit_flag:
+        if utils.update_flag:
             synapse.available = False
             return synapse
-        synapse.available = not is_process_running(processes)
+        synapse.available = not utils.is_process_running(processes)
         return synapse
 
-    def join_group( synapse: mapreduce.protocol.Join ) -> mapreduce.protocol.Join:
+    def join_group( synapse: protocol.Join ) -> protocol.Join:
         validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
         bt.logging.info(f"Validator {validator_uid} asks Joining Group")
         try:
-            if not check_version(synapse.version, config.auto_update):
-                synapse.version = get_my_version()
+            if not utils.check_version(synapse.version):
+                synapse.version = utils.get_my_version()
                 return synapse
-            if mapreduce.utils.exit_flag:
+            if utils.update_flag:
                 synapse.joining = False
                 synapse.reason = 'Update'
                 return synapse
-            if is_process_running(processes):
+            if utils.is_process_running(processes):
                 synapse.joining = False
                 synapse.reason = 'Working'
                 return synapse
-            synapse.version = get_my_version()
+            synapse.version = utils.get_my_version()
             synapse.job.rank = synapse.ranks.get(str(my_subnet_uid))
             if synapse.job.client_hotkey in processes and processes[synapse.job.client_hotkey]['process'].is_alive():
                 synapse.joining = False
@@ -219,8 +218,9 @@ def main( config ):
     bt.logging.info(f"Starting axon server on port: {config.axon.port}")
     axon.start()
 
-    check_processes(processes)
-
+    thread = mp.Process(target=utils.check_processes, args=(processes,))
+    thread.start()
+    
     # Step 6: Keep the miner alive
     # This loop maintains the miner's operations until intentionally stopped.
     bt.logging.info(f"Starting main loop")
@@ -239,9 +239,15 @@ def main( config ):
                         f'Incentive:{metagraph.I[my_subnet_uid]} | '\
                         f'Emission:{metagraph.E[my_subnet_uid]}')
                 bt.logging.info(log)
+                
+            # Check for auto update
+            if step % 5 == 0 and config.auto_update != "no":
+                if utils.update_repository(config.auto_update):
+                    bt.logging.success("🔁 Repository updated, exiting validator")
+                    exit(0)
             
             step += 1
-            time.sleep(1)
+            time.sleep(bt.__blocktime__)
 
         # If someone intentionally stops the miner, it'll safely terminate operations.
         except KeyboardInterrupt:
