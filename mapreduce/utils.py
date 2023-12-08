@@ -323,16 +323,17 @@ def update_repository(flag = 'patch'):
         bt.logging.success(f"current version: {mapreduce.__version__}, new version: {new_version}")
         new_major, new_minor, new_patch = new_version.split('.')
         major, minor, patch = mapreduce.__version__.split('.')
-        if new_version != mapreduce.__version__:
-            os.system("python3 -m pip install -e .")
         if major != new_major:
+            os.system("python3 -m pip install -e .")
             return True
         if flag == 'major':
             return False
         if minor != new_minor:
+            os.system("python3 -m pip install -e .")
             return True
         if flag == 'minor':
             return False
         if patch != new_patch:
+            os.system("python3 -m pip install -e .")
             return True
     return False
