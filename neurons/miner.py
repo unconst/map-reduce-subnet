@@ -98,7 +98,7 @@ def main( config ):
     # bt.logging.info(f"Metagraph: {metagraph} {metagraph.axons}")
 
     if wallet.hotkey.ss58_address not in metagraph.hotkeys:
-        bt.logging.error(f"\nYour validator: {wallet} if not registered to chain connection: {subtensor} \nRun btcli register and try again. ")
+        bt.logging.error(f"\nYour miner: {wallet} if not registered to chain connection: {subtensor} \nRun btcli register and try again. ")
         exit()
     else:
         # Each miner gets a unique identity (UID) in the network for differentiation.
@@ -152,6 +152,21 @@ def main( config ):
         synapse.available = not utils.is_process_running(processes)
         return synapse
 
+    # The following functions control the miner's response to incoming requests.
+    # The blacklist function decides if a request should be ignored.
+    def blacklist_miner_status( synapse: protocol.MinerStatus ) -> Tuple[bool, str]:
+        if synapse.dendrite.hotkey not in metagraph.hotkeys:
+            # Ignore requests from unrecognized entities.
+            bt.logging.trace(f'Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}')
+            return True, ""
+        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
+        stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
+        bt.logging.info(f"Stake: {stake}")
+        if stake < 10:
+            bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
+            return True, ""
+        return False, ""
+
     def join_group( synapse: protocol.Join ) -> protocol.Join:
         validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
         bt.logging.info(f"Validator {validator_uid} asks Joining Group")
@@ -202,7 +217,7 @@ def main( config ):
     bt.logging.info(f"Attaching forward function to axon.")
     axon.attach(
         forward_fn = get_miner_status,
-        # blacklist_fn = blacklist_fn,
+        blacklist_fn = blacklist_miner_status,
     ).attach(
         forward_fn = join_group,
         blacklist_fn = blacklist_fn,
