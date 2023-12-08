@@ -244,7 +244,7 @@ def main( config ):
         try:
             # Below: Periodically update our knowledge of the network graph.
             if step % 5 == 0:
-                # metagraph = subtensor.metagraph(config.netuid)
+                metagraph = subtensor.metagraph(config.netuid)
                 log =  (f'Step:{step} | '\
                         f'Block:{metagraph.block.item()} | '\
                         f'Stake:{metagraph.S[my_subnet_uid]} | '\
