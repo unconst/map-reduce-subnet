@@ -7,7 +7,7 @@ import bittensor as bt
 import torch.multiprocessing as mp
 import torch
 from typing import Tuple
-import mapreduce as utils, protocol
+from mapreduce import utils, protocol
 from dist_validator import start_master_process
 from dist_miner import start_miner_dist_process
 from threading import Thread
