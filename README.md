@@ -170,13 +170,18 @@ cp example.validator.config.json validator.config.json
 ## Running Validator Script
 
 ```bash
-cd neurons
 # To run the validator
-python3 validator.py 
-    --netuid 10 # The subnet id you want to connect to
-    --subtensor.network local # blockchain endpoint you want to connect
-    --wallet.name <your validator wallet>  # name of your wallet
-    --wallet.hotkey <your validator hotkey> # hotkey name of your wallet
+python3 neurons/validator.py 
+    --logging.debug # Run in debug mode, alternatively --logging.trace for trace mode
+```
+
+## Mining from validator
+
+Validators can also mine. To do so, you just need to run neurons/all.py instead of neurons/validator.py
+All configurations are the same as validator.py
+
+```bash
+python3 neurons/all.py 
     --logging.debug # Run in debug mode, alternatively --logging.trace for trace mode
 ```
 
