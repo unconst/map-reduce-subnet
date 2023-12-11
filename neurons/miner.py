@@ -99,7 +99,7 @@ def main( config ):
 
     if wallet.hotkey.ss58_address not in metagraph.hotkeys:
         bt.logging.error(f"\nYour miner: {wallet} if not registered to chain connection: {subtensor} \nRun btcli register and try again. ")
-        exit()
+        os._exit(0)
     else:
         # Each miner gets a unique identity (UID) in the network for differentiation.
         my_subnet_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
@@ -259,7 +259,7 @@ def main( config ):
             if step % 5 == 0 and config.auto_update != "no":
                 if utils.update_repository():
                     bt.logging.success("🔁 Repository updated, exiting miner")
-                    exit()
+                    os._exit(0)
             
             step += 1
             time.sleep(bt.__blocktime__)
