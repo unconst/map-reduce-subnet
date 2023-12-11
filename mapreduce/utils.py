@@ -17,6 +17,7 @@ import codecs
 import re
 import traceback
 from datetime import datetime
+import subprocess
 
 update_flag = False
 update_at = 0
@@ -313,7 +314,7 @@ def get_available_memory():
 '''
 Check if the repository is up to date
 '''
-def update_repository(flag = 'patch'):
+def update_repository():
     bt.logging.info("Updating repository")
     os.system("git pull")
     here = os.path.abspath(os.path.dirname(__file__))
@@ -321,19 +322,7 @@ def update_repository(flag = 'patch'):
         version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", init_file.read(), re.M)
         new_version = version_match.group(1)
         bt.logging.success(f"current version: {mapreduce.__version__}, new version: {new_version}")
-        new_major, new_minor, new_patch = new_version.split('.')
-        major, minor, patch = mapreduce.__version__.split('.')
-        if major != new_major:
-            os.system("python3 -m pip install -e .")
-            return True
-        if flag == 'major':
-            return False
-        if minor != new_minor:
-            os.system("python3 -m pip install -e .")
-            return True
-        if flag == 'minor':
-            return False
-        if patch != new_patch:
+        if mapreduce.__version__ != new_version:
             os.system("python3 -m pip install -e .")
             return True
     return False
