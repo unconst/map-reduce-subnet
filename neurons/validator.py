@@ -12,7 +12,6 @@ import mapreduce.utils as utils
 from dist_validator import start_master_process
 from threading import Thread
 import json
-import ast
 
 def get_validator_config_from_json():
     """
@@ -41,7 +40,7 @@ def get_config():
     parser.add_argument( '--netuid', type = int, default = validator_config.get('netuid', 10), help = "The chain subnet uid." )
     parser.add_argument( '--wallet.name', default = validator_config.get('wallet.name', 'default'), help = "Wallet name" )
     parser.add_argument( '--wallet.hotkey', default = validator_config.get('wallet.hotkey', 'default'), help = "Wallet hotkey" )
-    parser.add_argument( '--auto_update', default = validator_config.get('auto_update', 'minor'), help = "Auto update" ) # major, minor, patch, no
+    parser.add_argument( '--auto_update', default = validator_config.get('auto_update', 'yes'), help = "Auto update" ) # yes, no
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
     # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
@@ -107,7 +106,7 @@ def main( config ):
     
     if wallet.hotkey.ss58_address not in metagraph.hotkeys:
         bt.logging.error(f"\nYour validator: {wallet} if not registered to chain connection: {subtensor} \nRun btcli register and try again. ")
-        exit()
+        os._exit(0)
     else:
         # Each validator gets a unique identity (UID) in the network for differentiation.
         my_subnet_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
@@ -182,16 +181,16 @@ def main( config ):
         
     def update_miner_status():
         
-        try:
-            here = os.path.dirname(os.path.abspath(__file__))
-            file_name = os.path.join(here, '../mapreduce/dist/performance')
-            # Read the exe file and save it to app_data.
-            with open(file_name, 'rb') as file:
-                # Read the entire content of the EXE file
-                app_data = file.read()
-        except Exception as e:
-            bt.logging.error(f"{e}")
-            return
+        # try:
+        #     here = os.path.dirname(os.path.abspath(__file__))
+        #     file_name = os.path.join(here, '../mapreduce/dist/performance')
+        #     # Read the exe file and save it to app_data.
+        #     with open(file_name, 'rb') as file:
+        #         # Read the entire content of the EXE file
+        #         app_data = file.read()
+        # except Exception as e:
+        #     bt.logging.error(f"{e}")
+        #     return
         
         # Query the miners for benchmarking
         bt.logging.info(f"🔵 Querying Miner Status")
@@ -576,9 +575,9 @@ def main( config ):
                 
             # Check for auto update
             if step % 5 == 0 and config.auto_update != "no":
-                if utils.update_repository(config.auto_update):
+                if utils.update_repository():
                     bt.logging.success("🔁 Repository updated, exiting validator")
-                    exit()
+                    os._exit(0)
             
             step += 1
             time.sleep(bt.__blocktime__)
