@@ -7,8 +7,7 @@ import bittensor as bt
 import torch.multiprocessing as mp
 import torch
 from typing import Tuple
-import mapreduce
-import mapreduce.utils as utils
+from mapreduce import utils, protocol
 from dist_validator import start_master_process
 from threading import Thread
 import json
@@ -194,7 +193,7 @@ def main( config ):
         
         # Query the miners for benchmarking
         bt.logging.info(f"🔵 Querying Miner Status")
-        responses = dendrite.query(metagraph.axons, mapreduce.protocol.MinerStatus(
+        responses = dendrite.query(metagraph.axons, protocol.MinerStatus(
             version=utils.get_my_version(),
             # perf_input = repr(app_data),
         ), timeout = 10)
@@ -220,7 +219,7 @@ def main( config ):
                     bt.logging.error(f'Timeout while waiting for benchmark result {miner_uid}, exiting ...')
                     break
                 continue
-            result:mapreduce.protocol.BenchmarkResult = processes[hotkey]['output_queue'].get()
+            result:protocol.BenchmarkResult = processes[hotkey]['output_queue'].get()
             log =  (f'🟢 Benchmark Result | UID: {miner_uid} | '\
                     f'Duration: {result.duration:.2f}s | '\
                     f'Data: {utils.human_readable_size(result.data_length)} | '\
@@ -242,7 +241,7 @@ def main( config ):
     """
     Process benchmark request
     """
-    def request_benchmark( synapse: mapreduce.protocol.RequestBenchmark ) -> mapreduce.protocol.RequestBenchmark:
+    def request_benchmark( synapse: protocol.RequestBenchmark ) -> protocol.RequestBenchmark:
         hotkey = synapse.dendrite.hotkey
         bt.logging.info(f"Benchmark request from {hotkey}")
                 
@@ -304,7 +303,7 @@ def main( config ):
             miners = [(synapse.miner_uid, metagraph.axons[synapse.miner_uid])]
             process = mp.Process(target=start_master_process, args=(input_queue, output_queue, wallet, miners, synapse.job, True))
             process.start()
-            job : mapreduce.protocol.Job = output_queue.get()
+            job : protocol.Job = output_queue.get()
             bt.logging.info("Master process running")
             # store process information
             processes[hotkey] = {
@@ -333,7 +332,7 @@ def main( config ):
             miner['status'] = 'available'
             return synapse
 
-    def blacklist_request_benchmark(synapse: mapreduce.protocol.RequestBenchmark) -> Tuple[bool, str]:
+    def blacklist_request_benchmark(synapse: protocol.RequestBenchmark) -> Tuple[bool, str]:
         hotkey = synapse.dendrite.hotkey
         # Check if the hotkey is benchmark_hotkey
         if hotkey not in validator_config['benchmark_hotkeys']:
@@ -342,7 +341,7 @@ def main( config ):
             return True, ""
         return False, ""
 
-    def connect_master( synapse: mapreduce.protocol.ConnectMaster ) -> mapreduce.protocol.ConnectMaster:
+    def connect_master( synapse: protocol.ConnectMaster ) -> protocol.ConnectMaster:
         hotkey = synapse.dendrite.hotkey
         bt.logging.info(f"Connecting request from {hotkey}")
         
@@ -387,7 +386,7 @@ def main( config ):
                 print(wallet, miners, synapse.job)
                 process = mp.Process(target=start_master_process, args=(input_queue, output_queue, wallet, miners, synapse.job, False))
                 process.start()
-                job : mapreduce.protocol.Job = output_queue.get()
+                job : protocol.Job = output_queue.get()
                 bt.logging.info("Master process running")
                 processes[hotkey] = {
                     'process': process,
@@ -421,7 +420,7 @@ def main( config ):
             return synapse
     
     # Prepare benchmark result, benchmark bot information 
-    def get_benchmark_result( synapse: mapreduce.protocol.BenchmarkResults) -> mapreduce.protocol.BenchmarkResults:
+    def get_benchmark_result( synapse: protocol.BenchmarkResults) -> protocol.BenchmarkResults:
         hotkey = synapse.dendrite.hotkey
         
         bt.logging.info(f"Get benchmark result request from {hotkey}")
@@ -431,7 +430,7 @@ def main( config ):
             return synapse
         # Check if the master process is running
         # Get the result from the master process
-        synapse.results = [ mapreduce.protocol.BenchmarkResult(
+        synapse.results = [ protocol.BenchmarkResult(
             duration = miner['duration'],
             data_length = miner['data_length'],
             bandwidth = miner['bandwidth'],
@@ -440,7 +439,7 @@ def main( config ):
         ) for miner in miner_status ]
         return synapse
 
-    def blacklist_get_benchmark_result( synapse: mapreduce.protocol.BenchmarkResults ) -> Tuple[bool, str]:
+    def blacklist_get_benchmark_result( synapse: protocol.BenchmarkResults ) -> Tuple[bool, str]:
         hotkey = synapse.dendrite.hotkey
         allowed_hotkeys = [
             "5DkRd1V7eurDpgKbiJt7YeJzQvxgpPiiU6FMDf8RmYQ78DpD", # Allow subnet owner's hotkey to fetch benchmark results from validators
