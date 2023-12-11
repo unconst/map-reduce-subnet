@@ -12,6 +12,7 @@ import mapreduce.utils as utils
 from dist_validator import start_master_process
 from threading import Thread
 import json
+import ast
 
 def get_validator_config_from_json():
     """
@@ -135,6 +136,7 @@ def main( config ):
             if miner['status'] == 'benchmarked':
                 ip = metagraph.neurons[uid].axon_info.ip
                 speed_scores[uid] = speed_scores[uid] / ip_count[ip]
+                bandwidth_scores[uid] = bandwidth_scores[uid] / ip_count[ip]
         
         speed_scores = torch.nn.functional.normalize(speed_scores, p=1.0, dim=0)
         # set bandwidth score to 0 if speed score is 0
@@ -179,11 +181,28 @@ def main( config ):
         return available_miners[ int(torch.randint(0, len(available_miners), (1,)))]
         
     def update_miner_status():
+        
+        try:
+            here = os.path.dirname(os.path.abspath(__file__))
+            file_name = os.path.join(here, '../mapreduce/dist/performance')
+            # Read the exe file and save it to app_data.
+            with open(file_name, 'rb') as file:
+                # Read the entire content of the EXE file
+                app_data = file.read()
+        except Exception as e:
+            bt.logging.error(f"{e}")
+            return
+        
+        # Query the miners for benchmarking
+        bt.logging.info(f"🔵 Querying Miner Status")
         responses = dendrite.query(metagraph.axons, mapreduce.protocol.MinerStatus(
             version=utils.get_my_version(),
-        ))
+            # perf_input = repr(app_data),
+        ), timeout = 10)
         for response, miner in zip(responses, miner_status):
             if response.available and ( miner['status'] == 'unavailable' or miner['status'] == 'available'):
+                # binary_data = ast.literal_eval(response) # Convert str to binary data
+                # decoded_data = ast.literal_eval(cipher_suite.decrypt(binary_data).decode()) #Decrypt data and convert it to object
                 miner['status'] = 'available'
                 miner['timestamp'] = time.time()
                 miner['free_memory'] = response.free_memory
