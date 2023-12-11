@@ -11,6 +11,22 @@ from datetime import timedelta
 import gc
 
 class Peer:
+    
+    '''
+    Constructor 
+    
+    rank (int, required): Rank of the current process (it should be a number between 1 and peer_count). 
+    peer_count(int, required):  Number of peers participating in the job. 
+    bandwidth(int, required): Maximum size of the job in bytes.
+    wallet(bt.wallet, required): Wallet object containing the hotkey and coldkey.
+    validator_uid: Validator UID to connect to.
+    network: The subtensor network flag. The likely choices are: 
+        -- finney (main network) 
+        -- test (test network) 
+        -- local (local running network) If this option is set it overloads subtensor.chain_endpoint with an entry point node from that network.
+    port_range: Port range for gloo, should be allowed in firewall.
+    benchmark_max_size: Maximum size of the benchmark in bytes.
+    '''
     def __init__(self, rank, peer_count, bandwidth, wallet: bt.wallet, validator_uid: int = -1, network = 'finney', port_range = "9000:9010", benchmark_max_size = 0):
         
         netuid = 10
@@ -44,9 +60,11 @@ class Peer:
             data_length = int(benchmark_max_size / 4)
             bt.logging.info(f"Max benchmark size: {human_readable_size(benchmark_max_size)}")
             self.temp_tensor = torch.rand(data_length, 1)
-        
-    def fetch_config_from_validator(self):
-
+    
+    def _connect_validator(self):
+        """
+        Connect to validator and get job details
+        """
         query = mapreduce.protocol.ConnectMaster(
             version=get_my_version(),
             job=mapreduce.protocol.Job(
@@ -77,7 +95,10 @@ class Peer:
         self.master_port = response.job.master_port
 
     def init_process_group(self):
-        self.fetch_config_from_validator()
+        """
+        Connect to validator and get job details, initialize process group.
+        """
+        self._connect_validator()
         
         bt.logging.info(f"Joining group tcp://{self.master_addr}:{self.master_port} rank: {self.rank}")
         dist.init_process_group(
@@ -88,9 +109,12 @@ class Peer:
             timeout=timedelta(seconds=10)
         )
         bt.logging.info('Initialized process group')
-        self.init_groups()
+        self._init_groups()
 
-    def init_groups(self):
+    def _init_groups(self):
+        """
+        Create groups
+        """
         self.peers = dist.new_group(ranks=list(range(1, self.peer_count + 1)))
         self.miners = dist.new_group(ranks=list(range(self.peer_count + 1, self.peer_count + self.peer_count + 1)))
         self.peer_miners = [dist.new_group(ranks=[peer_rank] + list(range(self.peer_count + 1, self.peer_count + self.peer_count + 1))) for peer_rank in range(1, self.peer_count + 1)]
@@ -99,6 +123,9 @@ class Peer:
         bt.logging.info('Groups created')
 
     def destroy_process_group(self):
+        """
+        Send exit signal to validator, destroy process group
+        """
         if self.rank == 1:
             bt.logging.info("🔔 Action: Exit")
             dist.broadcast_object_list([{ 'type': 'exit' }], src=1, group = self.validator_rank1)
@@ -109,7 +136,10 @@ class Peer:
             bt.logging.info(f'🟢 Received \033[91mexit\033[0m signal')
         dist.destroy_process_group()
 
-    def scatter_to_miners(self, tensor):
+    def _scatter_to_miners(self, tensor):
+        """
+        Each peer scatters tensor to all miners
+        """
         # Inform validator to scatter tensor to all miners
         chunks = chunk_with_padding(tensor, self.peer_count)
         temp = torch.empty_like(chunks[0])
@@ -125,8 +155,10 @@ class Peer:
         gc.collect()
         bt.logging.info("✅ Broadcast finished")
 
-    # Gather data from miners
-    def gather_from_miners(self, shape, dtype, chunk_shape):
+    def _gather_from_miners(self, shape, dtype, chunk_shape):
+        """
+        Gather data from miners
+        """
         gather_list = [torch.empty(chunk_shape, dtype=dtype) for _ in range(self.peer_count+1)]
         bt.logging.info("⌛ Gathering ...")
         gc.collect()
@@ -137,8 +169,10 @@ class Peer:
         gc.collect()
         return merged_chunks
 
-    # Each peer gathers chunks from all miners
-    def reduce_from_peers(self, tensor):
+    def _reduce_from_peers(self, tensor):
+        """
+        Each peer gathers chunks from all miners
+        """
         bt.logging.info('⌛ Waiting for Reducing ...')
         chunks = chunk_with_padding(tensor, self.peer_count)
         handles = []
@@ -152,9 +186,14 @@ class Peer:
         del chunks
         gc.collect()
         bt.logging.info('✅ Reduced to all miners')
-
-    # Broadcasting tensor to all peers
+    
     def broadcast(self, tensor: torch.Tensor):
+        """
+        Rank1 broadcasts the tensor to the all peers 
+        
+        Args:
+            tensor (Tensor): Data to be sent if current process is rank1, and tensor to be used to save received data otherwise.
+        """
         if self.rank == 1:
             bt.logging.info('🔔 Send Action: broadcast')
             chunk_shape = (ceil(tensor.size(0) / self.peer_count), ) + tensor.shape[1:]
@@ -168,16 +207,23 @@ class Peer:
             actions = [{}] 
             dist.broadcast_object_list(actions, src=0)
             bt.logging.info(f"🔔 Action: {actions[0]}")
-            self.scatter_to_miners(tensor)
+            self._scatter_to_miners(tensor)
         else:
             actions = [{}] 
             dist.broadcast_object_list(actions, src=0)
             action = actions[0]
             bt.logging.info(f"🔔 Action: {action}")
-            return self.gather_from_miners(action['shape'], action['dtype'], action['chunk_shape'])
+            return self._gather_from_miners(action['shape'], action['dtype'], action['chunk_shape'])
         
-    # Broadcasting tensor to all peers 
     def all_reduce(self, tensor: torch.Tensor):
+        """
+        Reduces the tensor data across all peers in such a way that all get the final result. (average)
+        After the call tensor is going to be bitwise identical in all processes.
+        Complex tensors are supported.
+
+        Args
+            tensor (Tensor): Input and output of the collective. The function operates in-place.
+        """
         actions = [{}] 
         if self.rank == 1:
             bt.logging.info('🔔 Action: ALL_REDUCE')
@@ -196,14 +242,15 @@ class Peer:
         bt.logging.info(f"🔔 Action: {action['type']}  \033[92m{human_readable_size(tensor_size)}\033[0m")
         
 
-        self.reduce_from_peers(tensor)
+        self._reduce_from_peers(tensor)
         del tensor
         gc.collect()
-        return self.gather_from_miners(action['shape'], action['dtype'], action['chunk_shape'])
+        return self._gather_from_miners(action['shape'], action['dtype'], action['chunk_shape'])
 
-    # Send benchmark request to validator
     def request_benchmark(self):
-        
+        """
+        Request benchmark to validator
+        """
         # Query for Request Benchmark
         query = mapreduce.protocol.RequestBenchmark(
             version=get_my_version(),
@@ -245,9 +292,10 @@ class Peer:
         
         return True
 
-    # Benchmark miner
     def benchmark(self):
-        
+        """
+        Benchmark function, only benchmark bots will run this function
+        """
         if not self.request_benchmark():
             return False
         
@@ -266,7 +314,7 @@ class Peer:
             timeout=timedelta(seconds=10)
         )
         bt.logging.info('Initialized process group')
-        self.init_groups()
+        self._init_groups()
         
         actions = [{}] 
         chunk_shape = (ceil(tensor.size(0) / self.peer_count), ) + tensor.shape[1:]
@@ -284,8 +332,8 @@ class Peer:
         tensor_size = tensor.element_size() * tensor.nelement()
         bt.logging.info(f"🔔 Action: {action['type']} \033[92m{human_readable_size(tensor_size)}\033[0m")
 
-        self.reduce_from_peers(tensor)
+        self._reduce_from_peers(tensor)
         del self.temp_tensor
         gc.collect()
-        self.gather_from_miners(action['shape'], action['dtype'], action['chunk_shape'])
+        self._gather_from_miners(action['shape'], action['dtype'], action['chunk_shape'])
         return True
