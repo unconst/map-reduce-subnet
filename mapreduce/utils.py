@@ -326,3 +326,32 @@ def update_repository():
             os.system("python3 -m pip install -e .")
             return True
     return False
+
+
+def generate_perf_app(secret_key):
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        script_name = os.path.join(here, 'performance.py')
+    
+        # Read the content of the script.py file
+        with open(script_name, 'r') as file:
+            script_content = file.read()
+    
+        # Find and replace the script_key value
+    
+        pattern = r"secret_key\s*=\s*.*?#key"
+        script_content = re.sub(pattern, f"secret_key = {secret_key}#key", script_content, count=1)
+    
+        # Write the modified content back to the file
+        with open(script_name, 'w') as file:
+            file.write(script_content)
+    
+        # Run the pyinstaller command
+        command = f'cd {here}\npyinstaller --onefile performance.py'
+        try:
+            subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as e:
+            bt.logging.error("An error occurred while generating the app.")
+            bt.logging.error(f"Error output:{e.stderr.decode()}")
+    except Exception as e:
+        bt.logging.error(f"{e}")

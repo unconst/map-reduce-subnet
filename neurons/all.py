@@ -9,6 +9,7 @@ import torch
 from typing import Tuple
 from mapreduce import utils, protocol
 from dist_validator import start_master_process
+from dist_miner import start_miner_dist_process
 from threading import Thread
 import json
 
@@ -39,6 +40,7 @@ def get_config():
     parser.add_argument( '--netuid', type = int, default = validator_config.get('netuid', 10), help = "The chain subnet uid." )
     parser.add_argument( '--wallet.name', default = validator_config.get('wallet.name', 'default'), help = "Wallet name" )
     parser.add_argument( '--wallet.hotkey', default = validator_config.get('wallet.hotkey', 'default'), help = "Wallet hotkey" )
+    parser.add_argument ( '--port.range', type = str, default = validator_config.get('wallet.hotkey', '9301:9310'), help = "Opened Port range for miner" )
     parser.add_argument( '--auto_update', default = validator_config.get('auto_update', 'yes'), help = "Auto update" ) # yes, no
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
@@ -448,7 +450,110 @@ def main( config ):
         if hotkey not in allowed_hotkeys:
             return True, ""
         return False, ""
+    
+    # The following functions control the miner's response to incoming requests.
+    # The blacklist function decides if a request should be ignored.
+    def blacklist_join( synapse: protocol.Join ) -> Tuple[bool, str]:
+        # Runs before the synapse data has been deserialized (i.e. before synapse.data is available).
+        # The synapse is instead contructed via the headers of the request. It is important to blacklist
+        # requests before they are deserialized to avoid wasting resources on requests that will be ignored.
+        # Below: Check that the hotkey is a registered entity in the metagraph.
+        if synapse.dendrite.hotkey not in metagraph.hotkeys:
+            # Ignore requests from unrecognized entities.
+            bt.logging.trace(f'Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}')
+            return True, ""
+        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
+        stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
+        bt.logging.info(f"Stake: {stake}")
+        if stake < 10:
+            bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
+            return True, ""
+        return False, ""
+
+    # The priority function determines the order in which requests are handled.
+    # More valuable or higher-priority requests are processed before others.
+    def priority_join( synapse: protocol.Join ) -> float:
+        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
+        prirority = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
+        bt.logging.trace(f'Prioritizing {synapse.dendrite.hotkey} with value: ', prirority)
+        return prirority
+
+    # This is the core miner function, which decides the miner's response to a valid, high-priority request.
+    def get_miner_status( synapse: protocol.MinerStatus ) -> protocol.MinerStatus:
+        # Check version of the synapse
+        validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
+        bt.logging.info(f"Validator {validator_uid} asks Miner Status")
+        if not utils.check_version(synapse.version):
+            synapse.version = utils.get_my_version()
+            return synapse
+        # Get Free Memory and Calculate Bandwidth
+        synapse.free_memory = utils.get_available_memory()
+        bt.logging.info(f"Free memory: {utils.human_readable_size(synapse.free_memory)}")
+        synapse.version = utils.get_my_version()
         
+        if utils.update_flag:
+            synapse.available = False
+            return synapse
+        synapse.available = not utils.is_process_running(processes)
+        return synapse
+
+    # The following functions control the miner's response to incoming requests.
+    # The blacklist function decides if a request should be ignored.
+    def blacklist_miner_status( synapse: protocol.MinerStatus ) -> Tuple[bool, str]:
+        if synapse.dendrite.hotkey not in metagraph.hotkeys:
+            # Ignore requests from unrecognized entities.
+            bt.logging.trace(f'Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}')
+            return True, ""
+        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
+        stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
+        bt.logging.info(f"Stake: {stake}")
+        if stake < 10:
+            bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
+            return True, ""
+        return False, ""
+
+    def join_group( synapse: protocol.Join ) -> protocol.Join:
+        validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
+        bt.logging.info(f"Validator {validator_uid} asks Joining Group")
+        try:
+            if not utils.check_version(synapse.version):
+                synapse.version = utils.get_my_version()
+                return synapse
+            if utils.update_flag:
+                synapse.joining = False
+                synapse.reason = 'Update'
+                return synapse
+            if utils.is_process_running(processes):
+                synapse.joining = False
+                synapse.reason = 'Working'
+                return synapse
+            synapse.version = utils.get_my_version()
+            synapse.job.rank = synapse.ranks.get(str(my_subnet_uid))
+            if synapse.job.client_hotkey in processes and processes[synapse.job.client_hotkey]['process'].is_alive():
+                synapse.joining = False
+                synapse.reason = 'Already in group'
+                return synapse
+            # try to join the group
+            bt.logging.info("🔵 Start Process ...")
+            queue = mp.Queue()
+            process = mp.Process(target=start_miner_dist_process, args=(queue, axon.external_ip, config.port.range, wallet, synapse.job))
+            process.start()
+            processes[synapse.job.client_hotkey] = {
+                'process': process,
+                'queue': queue,
+                'job': synapse.job
+            }
+            synapse.joining = True
+            return synapse
+        except Exception as e:
+            # if failed, set joining to false
+            bt.logging.info(f"❌ Error {e}")
+            traceback.print_exc()
+            synapse.joining = False
+            synapse.reason = str(e)
+            return synapse
+    
+
     def log_miner_status():
         for miner in miner_status:
             color = '0' #green
@@ -476,6 +581,13 @@ def main( config ):
     ).attach(
         forward_fn = get_benchmark_result,
         blacklist_fn = blacklist_get_benchmark_result
+    ).attach(
+        forward_fn = get_miner_status,
+        blacklist_fn = blacklist_miner_status,
+    ).attach(
+        forward_fn = join_group,
+        blacklist_fn = blacklist_join,
+        priority_fn = priority_join
     )
 
 
