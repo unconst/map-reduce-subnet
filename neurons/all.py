@@ -379,7 +379,7 @@ def main( config ):
                 input_queue = mp.Queue()
                 output_queue = mp.Queue()
                 synapse.job.status = "init"
-                
+
                 # Choose available miners to join.
                 miners = [(int(uid), axon) for uid, axon, miner in zip(metagraph.uids, metagraph.axons, miner_status) if axon.is_serving and ((miner['status'] == 'available' and utils.calc_bandwidth_from_memory(miner.get('free_memory',0)) >= synapse.job.bandwidth) or (miner['status'] == 'benchmarked' and utils.calc_bandwidth_from_memory(miner.get('free_memory',0)) >= synapse.job.bandwidth))]
                 # sort miners by score
@@ -686,9 +686,7 @@ def main( config ):
                 
             # Check for auto update
             if step % 5 == 0 and config.auto_update != "no":
-                if utils.update_repository():
-                    bt.logging.success("🔁 Repository updated, exiting validator")
-                    os._exit(0)
+                utils.update_repository()
             
             step += 1
             time.sleep(bt.__blocktime__)
