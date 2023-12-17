@@ -574,9 +574,7 @@ def main( config ):
                 
             # Check for auto update
             if step % 5 == 0 and config.auto_update != "no":
-                if utils.update_repository():
-                    bt.logging.success("🔁 Repository updated, exiting validator")
-                    os._exit(0)
+                utils.update_repository()
             
             step += 1
             time.sleep(bt.__blocktime__)

@@ -181,7 +181,7 @@ def check_processes(processes, miner_status = None):
                     keys_to_delete.append(key)
             for key in keys_to_delete:
                 bt.logging.info(f"🚩 Delete Process with key: {key}")
-                if miner_status and processes[key]['benchmarking']:
+                if miner_status and processes[key].get('benchmarking', False):
                     miner_uid = int(processes[key]['miners'][0][0])
                     if miner_status[miner_uid]['status'] == 'benchmarking':
                         miner_status[miner_uid]['status'] = 'unavailable'
@@ -324,6 +324,7 @@ def update_repository():
         bt.logging.success(f"current version: {mapreduce.__version__}, new version: {new_version}")
         if mapreduce.__version__ != new_version:
             os.system("python3 -m pip install -e .")
+            set_update_flag()
             return True
     return False
 
