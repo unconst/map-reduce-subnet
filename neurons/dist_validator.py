@@ -8,6 +8,7 @@ from datetime import timedelta
 import traceback
 from mapreduce.utils import get_my_version, set_gloo_socket_ifname, human_readable_size
 import mapreduce
+import signal
 
 # Validator class is responsible for validating the miners and managing the mining process.
 class Validator:
@@ -203,6 +204,13 @@ class Validator:
                 dist.destroy_process_group()
                 break
 
+def timeout_handler():
+    """
+    Handler for the alarm signal.
+    """
+    bt.logging.error("Session Timeout")
+    raise Exception("Timeout")
+
 # Start the master process for the Validator.
 def start_master_process(input_queue: mp.Queue, output_queue: mp.Queue, wallet: bt.wallet, miners, job: mapreduce.protocol.Job, is_benchmark = False):
     """
@@ -216,6 +224,11 @@ def start_master_process(input_queue: mp.Queue, output_queue: mp.Queue, wallet: 
         job (mapreduce.protocol.Job): Job information.
         is_benchmark (bool, optional): Flag to indicate if this process is for benchmarking. Defaults to False.
     """
+    # Set the signal handler for the alarm signal
+    signal.signal(signal.SIGALRM, timeout_handler)
+    # Schedule the alarm to go off after session time
+    signal.alarm(job.session_time)
+
     validator = Validator(input_queue, output_queue, wallet, miners, job, is_master = True, is_benchmark = is_benchmark)
     try:
         validator.start_master()

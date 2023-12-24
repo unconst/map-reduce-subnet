@@ -166,6 +166,12 @@ def main( config ):
                     miner_status[uid]['bandwidth'] = 0
                     miner_status[uid]['bandwidth_updated_at'] = 0
                 miner_status[uid]['retry'] = 0
+    
+    def clear_benchmark_processes():
+        for hotkey in processes:
+            if processes[hotkey].get('benchmarking', False):
+                processes[hotkey]['process'].terminate()
+                del processes[hotkey]
         
     # Choose miner to benchmark
     def choose_miner():
@@ -215,7 +221,7 @@ def main( config ):
                 return
             if processes[hotkey]['output_queue'].empty():
                 time.sleep(1)
-                if time.time() - start_at > 3600:
+                if time.time() - start_at > 60:
                     bt.logging.error(f'Timeout while waiting for benchmark result {miner_uid}, exiting ...')
                     break
                 continue
@@ -283,7 +289,7 @@ def main( config ):
             synapse.job.client_hotkey = hotkey
             synapse.job.master_addr = axon.external_ip
             synapse.job.master_port = utils.get_unused_port(9000, 9300)
-            
+            synapse.job.session_time = 60
             miner_bandwidth = miner.get('bandwidth', 0)
             current_bandwidth = utils.calc_bandwidth_from_memory(miner.get('free_memory',0))
             # If the miner got bandwidth benchmark already, use 100 MB bandwidth for benchmarking
@@ -540,10 +546,21 @@ def main( config ):
                         is_benchmarking = True
                         break
                         
-                if is_benchmarking and current_block - last_updated_block < 360:
-                    step += 1
-                    time.sleep(bt.__blocktime__)
-                    continue
+                if is_benchmarking:
+                    if current_block - last_updated_block < 360:
+                        step += 1
+                        time.sleep(bt.__blocktime__)
+                        continue
+                    else: 
+                        is_benchmarking = False
+                        for miner in miner_status:
+                            if miner['status'] == 'benchmarked':
+                                is_benchmarking = True
+                                break
+                        if not is_benchmarking:
+                            bt.logging.error("No miner is benchmarked, something wrong")
+                            print("Restarting validator ...")
+                            os._exit(0)
                 
                 bt.logging.success("Updating score ...")                
                 new_scores = calculate_score()
@@ -575,6 +592,11 @@ def main( config ):
             # Check for auto update
             if step % 5 == 0 and config.auto_update != "no":
                 utils.update_repository()
+            
+            # Check if axon is running
+            if not axon.fast_server.is_running:
+                bt.logging.error("Axon is not running, restarting validator ...")
+                break
             
             step += 1
             time.sleep(bt.__blocktime__)
