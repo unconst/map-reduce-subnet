@@ -128,7 +128,7 @@ def main( config ):
         bandwidth_scores = torch.zeros_like(metagraph.S, dtype=torch.float32)
         ip_count = {}
         for miner in miner_status:
-            if miner['status'] == 'benchmarked':
+            if miner['status'] != "failed":
                 uid = miner['uid']
                 speedtest_scores[uid] = miner['upload'] * 0.5 + miner['download'] * 0.5
                 benchmark_scores[uid] = miner['speed']
@@ -620,8 +620,8 @@ def main( config ):
                 scores = new_scores * alpha + scores * (1 - alpha)
                 
                 for uid in range(len(metagraph.uids)):
-                    miner_status[uid]['new_score'] = new_scores[uid]
-                    miner_status[uid]['score'] = scores[uid]
+                    miner_status[uid]['new_score'] = float(new_scores[uid])
+                    miner_status[uid]['score'] = float(scores[uid])
                 
                 print(json.dumps(miner_status, indent=2))
                 
