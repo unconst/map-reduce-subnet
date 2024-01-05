@@ -78,6 +78,9 @@ miner_status = []
 
 # Global variable to store speed
 speedtest_results = {}
+
+# Global variable to last benchmark time
+last_benchmark_at = 0
     
 # Main takes the config and starts the validator.
 def main( config ):
@@ -340,6 +343,7 @@ def main( config ):
             # create thread for waiting benchmark result
             thread = Thread(target=wait_for_benchmark_result, args=(hotkey, synapse.miner_uid, ))
             thread.start()
+            last_benchmark_at = time.time()
             return synapse
         except Exception as e:
             # if failed, set joining to false
@@ -573,6 +577,11 @@ def main( config ):
         try:
             # Below: Periodically update our knowledge of the network graph.
             metagraph = subtensor.metagraph(config.netuid)
+            
+            if last_benchmark_at > 0 and time.time() - last_benchmark_at > 100:
+                bt.logging.info("No benchmark is happening. Restarting validator ...")
+                os._exit(0)
+                
             if step % 5 == 0:
                 update_miner_status()
                 for miner in miner_status:
