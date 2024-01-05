@@ -244,6 +244,7 @@ def main( config ):
                     f'Speed: {utils.human_readable_size(result.speed)}/s | '\
             )
             bt.logging.success(log)
+            bt.logging.info(f"Benchmarked miners: { len([miner for miner in miner_status if miner['status'] == 'benchmarked'])}")
             if result.bandwidth == 50 * 1024 * 1024: # 50 MB for speed test
                 miner_status[miner_uid]['status'] = 'speed_tested'
             else:
