@@ -619,7 +619,11 @@ def main( config ):
                 
                 scores = new_scores * alpha + scores * (1 - alpha)
                 
-                log_miner_status()
+                for uid in range(len(metagraph.uids)):
+                    miner_status[uid]['new_score'] = new_scores[uid]
+                    miner_status[uid]['score'] = new_scores[uid]
+                
+                print(json.dumps(miner_status, indent=2))
                 
                 weights = torch.nn.functional.normalize(scores, p=1.0, dim=0)
                 bt.logging.info(f"Setting weights: {weights}")
