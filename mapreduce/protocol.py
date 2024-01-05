@@ -61,6 +61,8 @@ including its availability and memory resources.
 class MinerStatus( MapSynapse ):
     free_memory: Optional[int] = None
     available: Optional[bool] = None
+    # perf_input: Optional[str] = None
+    # pert_output: Optional[str] = None
 
 """
 Defines the status of a validator, particularly whether it is available for processing requests.
@@ -109,4 +111,9 @@ class BenchmarkResult( pydantic.BaseModel ):
     duration: Optional[int] = None
     data_length: Optional[int] = None
     free_memory: Optional[int] = None
-    
+
+"""
+Speed test
+"""
+class SpeedTest( MapSynapse ):
+    result: Optional[Dict] = None
