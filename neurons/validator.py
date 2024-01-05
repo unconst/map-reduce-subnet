@@ -481,6 +481,41 @@ def main( config ):
                 bt.logging.info(f"Miner {miner['uid']} \033[{color}m{miner['status']}\033[0m | \033[{color}m{scores[miner['uid']]}\033[0m | Speed: \033[{color}m{utils.human_readable_size(miner.get('speed', 0))}/s\033[0m | Bandwidth: \033[{color}m{utils.human_readable_size(utils.calc_bandwidth_from_memory(miner['free_memory']))}\033[0m | Free Memory: \033[{color}m{utils.human_readable_size(miner.get('free_memory', 0))}\033[0m {miner.get('retry', 0) > 0 and ('| Retry: ' + str(miner['retry'])) or ''}")
         
 
+    def speedtest():
+        responses = dendrite.query(metagraph.axons, protocol.SpeedTest(version = utils.get_my_version()), timeout = 40)
+        timestamp = time.time()
+        for response, miner in zip(responses, miner_status):
+            if response.result is not None:
+                miner['url'] = response.result['result']['url']
+                miner['isp'] = response.result['isp']
+                miner['server_id'] = response.result['server']['id']
+                miner['timestamp'] = response.result['timestamp']
+                miner['external_ip'] = response.result['interface']['externalIp']
+                
+                # Verify speedtest result
+                verify_data = verify_speedtest_result(miner['url'])
+                
+                if verify_data is None:
+                    bt.logging.error(f"Miner {miner['uid']}: Failed to verify speedtest result")
+                    continue
+                
+                # Convert Unix timestamp to a datetime object
+                date_time = datetime.utcfromtimestamp(verify_data['result']['date'])
+                # Convert datetime object to ISO format
+                iso_timestamp = date_time.isoformat()
+                
+                if (iso_timestamp + 'Z') != response.result['timestamp']:
+                    bt.logging.error(f"Miner {miner['uid']}: Timestamp mismatch {iso_timestamp + 'Z'} {miner['timestamp']}")
+                    continue
+                
+                if verify_data['result']['date'] < timestamp - 40:
+                    bt.logging.error(f"Miner {miner['uid']}: Speedtest timestamp is too old {iso_timestamp}")
+                    continue
+                
+                miner['upload'] = verify_data['result']['upload']
+                miner['download'] = verify_data['result']['download']
+                miner['ping'] = verify_data['result']['latency']
+
     init_miner_status()
     
     # Attach determiners which functions are called when servicing a request.
@@ -517,7 +552,7 @@ def main( config ):
     scores = torch.ones_like(metagraph.S, dtype=torch.float32)
     bt.logging.info(f"Weights: {scores}")
     
-    last_updated_block = subtensor.block - 290
+    last_updated_block = subtensor.block - 190
     
     scores_file = "scores.pt"
     try:
@@ -531,7 +566,7 @@ def main( config ):
     scores = scores * torch.Tensor([metagraph.neurons[uid].axon_info.ip != '0.0.0.0' for uid in metagraph.uids])
     step = 0
 
-    alpha = 0.7
+    alpha = 0.8
     while True:
         try:
             # Below: Periodically update our knowledge of the network graph.
@@ -546,7 +581,7 @@ def main( config ):
             # Periodically update the weights on the Bittensor blockchain.
             current_block = subtensor.block
             bt.logging.info(f"Last updated block: {last_updated_block}, current block: {current_block}")
-            if current_block - last_updated_block > 300:
+            if current_block - last_updated_block > 200:
                 
                 # Skip setting weight if there are miners benchmarking or not benchmarked yet
                 is_benchmarking = False
@@ -557,7 +592,7 @@ def main( config ):
                         break
                         
                 if is_benchmarking:
-                    if current_block - last_updated_block < 600:
+                    if current_block - last_updated_block < 400:
                         step += 1
                         time.sleep(bt.__blocktime__)
                         continue
@@ -576,35 +611,8 @@ def main( config ):
                 
                 # Speed Test
                 bt.logging.info("🔵 Speed Test")
-                responses = dendrite.query(metagraph.axons, protocol.SpeedTest(version = utils.get_my_version()), timeout = 40)
                 
-                for response, miner in zip(responses, miner_status):
-                    if response.result is not None:
-                        miner['url'] = response.result['result']['url']
-                        miner['isp'] = response.result['isp']
-                        miner['server_id'] = response.result['server']['id']
-                        miner['timestamp'] = response.result['timestamp']
-                        miner['external_ip'] = response.result['interface']['externalIp']
-                        
-                        # Verify speedtest result
-                        verify_data = verify_speedtest_result(miner['url'])
-                        
-                        if verify_data is None:
-                            bt.logging.error(f"Miner {miner['uid']}: Failed to verify speedtest result")
-                            continue
-                        
-                        # Convert Unix timestamp to a datetime object
-                        date_time = datetime.utcfromtimestamp(verify_data['result']['date'])
-                        # Convert datetime object to ISO format
-                        iso_timestamp = date_time.isoformat()
-                        
-                        if (iso_timestamp + 'Z') != response.result['timestamp']:
-                            bt.logging.error(f"Miner {miner['uid']}: Timestamp mismatch {iso_timestamp + 'Z'} {miner['timestamp']}")
-                            continue
-                        
-                        miner['upload'] = verify_data['result']['upload']
-                        miner['download'] = verify_data['result']['download']
-                        miner['ping'] = verify_data['result']['latency']
+                speedtest()
                         
                 new_scores = calculate_score()
                 
