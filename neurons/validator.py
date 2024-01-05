@@ -621,7 +621,7 @@ def main( config ):
                 
                 for uid in range(len(metagraph.uids)):
                     miner_status[uid]['new_score'] = new_scores[uid]
-                    miner_status[uid]['score'] = new_scores[uid]
+                    miner_status[uid]['score'] = scores[uid]
                 
                 print(json.dumps(miner_status, indent=2))
                 
