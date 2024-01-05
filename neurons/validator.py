@@ -499,17 +499,18 @@ def main( config ):
                     bt.logging.error(f"Miner {miner['uid']}: Failed to verify speedtest result")
                     continue
                 
-                # Convert Unix timestamp to a datetime object
-                date_time = datetime.utcfromtimestamp(verify_data['result']['date'])
-                # Convert datetime object to ISO format
-                iso_timestamp = date_time.isoformat()
+                date_time = datetime.fromisoformat(miner['timestamp'].rstrip("Z"))
+
+                # Convert datetime object to Unix timestamp
+                unix_timestamp = int(date_time.timestamp())
+
                 
-                if (iso_timestamp + 'Z') != response.result['timestamp']:
-                    bt.logging.error(f"Miner {miner['uid']}: Timestamp mismatch {iso_timestamp + 'Z'} {miner['timestamp']}")
+                if abs(unix_timestamp - verify_data['result']['date']) > 2:
+                    bt.logging.error(f"Miner {miner['uid']}: Timestamp mismatch {verify_data['result']['date']} {miner['timestamp']}")
                     continue
                 
                 if verify_data['result']['date'] < timestamp - 40:
-                    bt.logging.error(f"Miner {miner['uid']}: Speedtest timestamp is too old {iso_timestamp}")
+                    bt.logging.error(f"Miner {miner['uid']}: Speedtest timestamp is too old {miner['timestamp']}")
                     continue
                 
                 miner['upload'] = verify_data['result']['upload']
