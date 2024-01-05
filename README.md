@@ -80,6 +80,17 @@ Recommended hardware requirement:
 
 Note: Higher network bandwidth and RAM can lead to more rewards.
 
+You must install speedtest cli before running the miner.
+```bash
+sudo apt-get remove speedtest-cli
+sudo apt-get install curl
+curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash
+sudo apt-get install speedtest
+sudo apt-get install iperf3
+# run speedtest and accept the license
+speedtest -f json-pretty
+```
+
 ## Running Miner Script
 
 Run the miner using the following script:

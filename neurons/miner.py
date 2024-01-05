@@ -27,6 +27,7 @@ from typing import Tuple
 import torch.multiprocessing as mp
 from dist_miner import start_miner_dist_process
 from mapreduce import utils, protocol
+from speedtest import speedtest
 
 # import miner
 
@@ -120,7 +121,7 @@ def main( config ):
         caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
         stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
         bt.logging.info(f"Stake: {stake}")
-        if stake < 10:
+        if stake < 3000:
             bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
             return True, ""
         return False, ""
@@ -162,7 +163,7 @@ def main( config ):
         caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
         stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
         bt.logging.info(f"Stake: {stake}")
-        if stake < 10:
+        if stake < 3000:
             bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
             return True, ""
         return False, ""
@@ -208,6 +209,54 @@ def main( config ):
             synapse.reason = str(e)
             return synapse
 
+
+    # The following functions control the miner's response to incoming requests.
+    # The blacklist function decides if a request should be ignored.
+    def blacklist_speed_test( synapse: protocol.SpeedTest ) -> Tuple[bool, str]:
+        # Runs before the synapse data has been deserialized (i.e. before synapse.data is available).
+        # The synapse is instead contructed via the headers of the request. It is important to blacklist
+        # requests before they are deserialized to avoid wasting resources on requests that will be ignored.
+        # Below: Check that the hotkey is a registered entity in the metagraph.
+        if synapse.dendrite.hotkey not in metagraph.hotkeys:
+            # Ignore requests from unrecognized entities.
+            bt.logging.trace(f'Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}')
+            return True, ""
+        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
+        stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
+        bt.logging.info(f"Stake: {stake}")
+        if stake < 3000:
+            bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
+            return True, ""
+        return False, ""
+
+    # The priority function determines the order in which requests are handled.
+    # More valuable or higher-priority requests are processed before others.
+    def priority_speed_test( synapse: protocol.SpeedTest ) -> float:
+        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
+        prirority = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
+        bt.logging.trace(f'Prioritizing {synapse.dendrite.hotkey} with value: ', prirority)
+        return prirority
+
+    # This is the core miner function, which decides the miner's response to a valid, high-priority request.
+    def speed_test( synapse: protocol.SpeedTest ) -> protocol.SpeedTest:
+        # Check version of the synapse
+        validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
+        bt.logging.info(f"Validator {validator_uid} asks speed test")
+        if not utils.check_version(synapse.version):
+            synapse.version = utils.get_my_version()
+            return synapse
+        
+        # Speed Test
+        synapse.result = speedtest()
+        if synapse.result:
+            bt.logging.info("Download: " + str(round(synapse.result['download']['bandwidth'] * 8 / 1000000, 2)) + " Mbps")
+            bt.logging.info("Upload: " + str(round(synapse.result['upload']['bandwidth'] * 8 / 1000000, 2)) + " Mbps")
+            bt.logging.info("Ping: " + str(synapse.result['ping']['latency']) + " ms")
+            bt.logging.info("URL: " + synapse.result['result']['url'])
+        
+        synapse.version = utils.get_my_version()
+        return synapse
+
     # Step 5: Build and link miner functions to the axon.
     # The axon handles request processing, allowing validators to send this process requests.
     axon = bt.axon( wallet = wallet, config = config,  port = config.axon.port )
@@ -218,6 +267,10 @@ def main( config ):
     axon.attach(
         forward_fn = get_miner_status,
         blacklist_fn = blacklist_miner_status,
+    ).attach(
+        forward_fn = speed_test,
+        blacklist_fn = blacklist_speed_test,
+        priority_fn = priority_speed_test
     ).attach(
         forward_fn = join_group,
         blacklist_fn = blacklist_fn,
