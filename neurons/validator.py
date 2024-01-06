@@ -80,7 +80,7 @@ miner_status = []
 speedtest_results = {}
 
 # Global variable to last benchmark time
-last_benchmark_at = 0
+last_benchmark_at = time.time()
     
 # Main takes the config and starts the validator.
 def main( config ):
@@ -491,7 +491,7 @@ def main( config ):
         
 
     def speedtest():
-        
+        global speedtest_results
         # choose axons for speed test
         axons_for_speedtest = []
         for uid, axon in enumerate(metagraph.axons):
