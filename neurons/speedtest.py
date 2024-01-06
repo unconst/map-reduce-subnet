@@ -31,25 +31,28 @@ def verify_speedtest_result(url):
             return None
 
     except requests.RequestException as e:
-        print(str(e).ljust(3)) 
-        if str(e).ljust(3) == '429':
+        if e.args[0][:3] == '429':
+            print("Too many requests. Waiting few seconds...")
             time.sleep(6)
             return verify_speedtest_result(url)
         print(f"Error fetching the URL: {e}")
         return None
 
 if __name__ == "__main__":
-    result = speedtest()
+    # result = speedtest()
     
-    print("Timestamp: ", result['timestamp'])
-    print("Download: ", round(result['download']['bandwidth'] * 8 / 1000000, 2), "Mbps")
-    print("Upload: ", round(result['upload']['bandwidth'] * 8 / 1000000, 2), "Mbps")
-    print("Ping: ", result['ping']['latency'], "ms")
-    print("URL: ", result['result']['url'])
+    # print("Timestamp: ", result['timestamp'])
+    # print("Download: ", round(result['download']['bandwidth'] * 8 / 1000000, 2), "Mbps")
+    # print("Upload: ", round(result['upload']['bandwidth'] * 8 / 1000000, 2), "Mbps")
+    # print("Ping: ", result['ping']['latency'], "ms")
+    # print("URL: ", result['result']['url'])
     
-    print(result)
+    # print(result)
     
     # Fetch and extract data
-    data = verify_speedtest_result(result['result']['url'])
-    if data:
-        print(json.dumps(data, indent=2))
+    url = "https://www.speedtest.net/result/c/81cd0ce5-caca-4bf5-b0e4-4ad835c2e498"
+    while True:
+        time.sleep(0.1)
+        data = verify_speedtest_result(url)
+        if data:
+            print(json.dumps(data, indent=2))
