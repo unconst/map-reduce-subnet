@@ -558,11 +558,11 @@ def main( config ):
                     'ping': miner['ping'],
                 }
                 
-                bt.logging.info(f"Miner {miner['uid']} | Download: {miner['download']/1000}/Mbps | Upload: {miner['upload']/1000}/Mbps")
+                bt.logging.success(f"Miner {miner['uid']} | Download: {miner['download']/1000}/Mbps | Upload: {miner['upload']/1000}/Mbps")
                 
-        # save speedtest result
-        with open('speedtest_results.json', 'w') as f:
-            json.dump(speedtest_results, f, indent=2)
+                # save speedtest result
+                with open('speedtest_results.json', 'w') as f:
+                    json.dump(speedtest_results, f, indent=2)
         
     init_miner_status()
     
