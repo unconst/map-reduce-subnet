@@ -523,7 +523,7 @@ def main( config ):
                     bt.logging.error(f"Miner {miner['uid']}: Failed to verify speedtest result")
                     continue
                 
-                time.sleep(0.2)
+                time.sleep(0.5)
 
                 if abs(miner['timestamp'] - verify_data['result']['date']) > 2:
                     bt.logging.error(f"Miner {miner['uid']}: Timestamp mismatch {verify_data['result']['date']} {miner['timestamp']}")
