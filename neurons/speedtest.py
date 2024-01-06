@@ -31,7 +31,8 @@ def verify_speedtest_result(url):
             return None
 
     except requests.RequestException as e:
-        if e.errno == 429:
+        print(str(e).ljust(3)) 
+        if str(e).ljust(3) == '429':
             time.sleep(6)
             return verify_speedtest_result(url)
         print(f"Error fetching the URL: {e}")
@@ -50,6 +51,5 @@ if __name__ == "__main__":
     
     # Fetch and extract data
     data = verify_speedtest_result(result['result']['url'])
-
     if data:
         print(json.dumps(data, indent=2))
