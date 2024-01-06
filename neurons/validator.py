@@ -608,6 +608,8 @@ def main( config ):
         scores = torch.zeros_like(metagraph.S, dtype=torch.float32)
         bt.logging.info(f"Initialized all scores to 0")
     
+    global speedtest_results
+    
     # load speedtest results
     try:
         with open('speedtest_results.json') as f:
