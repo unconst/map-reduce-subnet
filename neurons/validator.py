@@ -491,6 +491,7 @@ def main( config ):
         
 
     def speedtest():
+        
         global speedtest_results
         # choose axons for speed test
         axons_for_speedtest = []
@@ -503,7 +504,7 @@ def main( config ):
             if time.time() - old_speedtest_result['timestamp'] > 3600 * 72:
                 axons_for_speedtest.append((uid, axon))
                 continue
-
+        bt.logging.info("🔵 Speed Test")
         responses = dendrite.query([axon for uid, axon in axons_for_speedtest], protocol.SpeedTest(version = utils.get_my_version()), timeout = 40)
         timestamp = time.time()
         for response, miner in zip(responses, miner_status):
@@ -523,7 +524,7 @@ def main( config ):
                     bt.logging.error(f"Miner {miner['uid']}: Failed to verify speedtest result")
                     continue
                 
-                time.sleep(3)
+                time.sleep(5)
 
                 if abs(miner['timestamp'] - verify_data['result']['date']) > 2:
                     bt.logging.error(f"Miner {miner['uid']}: Timestamp mismatch {verify_data['result']['date']} {miner['timestamp']}")
@@ -556,6 +557,8 @@ def main( config ):
                     'download': miner['download'],
                     'ping': miner['ping'],
                 }
+                
+                bt.logging.info(f"Miner {miner['uid']} | Download: {miner['download']/1000000}/Mbps | Upload: {miner['upload']/1000000}/Mbps")
                 
         # save speedtest result
         with open('speedtest_results.json', 'w') as f:
@@ -676,9 +679,7 @@ def main( config ):
                 
                 bt.logging.success("Updating score ...")
                 
-                # Speed Test
-                bt.logging.info("🔵 Speed Test")
-                
+                # Speed Test                
                 speedtest()
                         
                 new_scores = calculate_score()
