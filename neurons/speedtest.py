@@ -2,13 +2,14 @@ import pexpect as pe
 import json
 import requests
 import re
+import time
 
 # speedtest using speedtest cli
 def speedtest():
     speedtest = pe.spawn('speedtest -f json', encoding='utf-8')
     index = speedtest.expect(['{"type":"result".*', pe.EOF, pe.TIMEOUT], timeout=30)  # waiting 30 seconds for the prompt
     if index > 0:
-        print("Timeout")
+        print("Error", speedtest.before, speedtest.after)
         return None
     return json.loads(speedtest.after)
   
@@ -30,6 +31,10 @@ def verify_speedtest_result(url):
             return None
 
     except requests.RequestException as e:
+        print(str(e).ljust(3)) 
+        if str(e).ljust(3) == '429':
+            time.sleep(6)
+            return verify_speedtest_result(url)
         print(f"Error fetching the URL: {e}")
         return None
 
@@ -46,6 +51,5 @@ if __name__ == "__main__":
     
     # Fetch and extract data
     data = verify_speedtest_result(result['result']['url'])
-
     if data:
         print(json.dumps(data, indent=2))
