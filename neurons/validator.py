@@ -523,19 +523,27 @@ def main( config ):
                     bt.logging.error(f"Miner {miner['uid']}: Failed to verify speedtest result")
                     continue
                 
-                time.sleep(1)
+                time.sleep(3)
 
                 if abs(miner['timestamp'] - verify_data['result']['date']) > 2:
                     bt.logging.error(f"Miner {miner['uid']}: Timestamp mismatch {verify_data['result']['date']} {miner['timestamp']}")
                     continue
                 
-                if verify_data['result']['date'] < timestamp - 40:
+                if verify_data['result']['date'] < timestamp - 40:                    
                     bt.logging.error(f"Miner {miner['uid']}: Speedtest timestamp is too old {miner['timestamp']}")
                     continue
                 
                 miner['upload'] = verify_data['result']['upload']
                 miner['download'] = verify_data['result']['download']
                 miner['ping'] = verify_data['result']['latency']
+                
+                # if miner['timestamp'] < timestamp - 40:                    
+                #     bt.logging.error(f"Miner {miner['uid']}: Speedtest timestamp is too old {miner['timestamp']}")
+                #     continue
+                
+                # miner['upload'] = response.result['upload']['bandwidth'] * 8 / 1000000
+                # miner['download'] = response.result['download']['bandwidth'] * 8 / 1000000
+                # miner['ping'] = response.result['ping']['latency']
                 
                 speedtest_results[miner['external_ip']] = {
                     'timestamp': miner['timestamp'],
@@ -624,7 +632,8 @@ def main( config ):
             
             bt.logging.info(f"Last benchmarked at: {last_benchmark_at}")
             if last_benchmark_at > 0 and time.time() - last_benchmark_at > 300:
-                bt.logging.info("No benchmark is happening. Restarting validator ...")
+                bt.logging.error("No benchmark is happening. Restarting validator ...")
+                time.sleep(1)
                 os._exit(0)
                 
             if step % 5 == 0:
