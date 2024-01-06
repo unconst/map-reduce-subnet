@@ -517,14 +517,14 @@ def main( config ):
                 miner['timestamp'] = int(date_time.timestamp())
                 miner['external_ip'] = response.result['interface']['externalIp']
                 
+                time.sleep(6)
+                
                 # Verify speedtest result
                 verify_data = verify_speedtest_result(miner['url'])
                 
                 if verify_data is None:
                     bt.logging.error(f"Miner {miner['uid']}: Failed to verify speedtest result")
                     continue
-                
-                time.sleep(5)
 
                 if abs(miner['timestamp'] - verify_data['result']['date']) > 2:
                     bt.logging.error(f"Miner {miner['uid']}: Timestamp mismatch {verify_data['result']['date']} {miner['timestamp']}")
@@ -558,7 +558,7 @@ def main( config ):
                     'ping': miner['ping'],
                 }
                 
-                bt.logging.info(f"Miner {miner['uid']} | Download: {miner['download']/1000000}/Mbps | Upload: {miner['upload']/1000000}/Mbps")
+                bt.logging.info(f"Miner {miner['uid']} | Download: {miner['download']/1000}/Mbps | Upload: {miner['upload']/1000}/Mbps")
                 
         # save speedtest result
         with open('speedtest_results.json', 'w') as f:
