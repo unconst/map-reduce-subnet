@@ -263,6 +263,9 @@ def main( config ):
     Process benchmark request
     """
     def request_benchmark( synapse: protocol.RequestBenchmark ) -> protocol.RequestBenchmark:
+        
+        global last_benchmark_at
+        
         hotkey = synapse.dendrite.hotkey
         bt.logging.info(f"Benchmark request from {hotkey}")
                 
