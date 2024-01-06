@@ -80,7 +80,7 @@ miner_status = []
 speedtest_results = {}
 
 # Global variable to last benchmark time
-last_benchmark_at = time.time()
+last_benchmark_at = 0
     
 # Main takes the config and starts the validator.
 def main( config ):
@@ -523,7 +523,7 @@ def main( config ):
                     bt.logging.error(f"Miner {miner['uid']}: Failed to verify speedtest result")
                     continue
                 
-                time.sleep(0.5)
+                time.sleep(1)
 
                 if abs(miner['timestamp'] - verify_data['result']['date']) > 2:
                     bt.logging.error(f"Miner {miner['uid']}: Timestamp mismatch {verify_data['result']['date']} {miner['timestamp']}")
@@ -613,13 +613,14 @@ def main( config ):
     step = 0
 
     alpha = 0.8
+    last_benchmark_at = time.time()
     while True:
         try:
             # Below: Periodically update our knowledge of the network graph.
             metagraph = subtensor.metagraph(config.netuid)
             
             bt.logging.info(f"Last benchmarked at: {last_benchmark_at}")
-            if last_benchmark_at > 0 and time.time() - last_benchmark_at > 120:
+            if last_benchmark_at > 0 and time.time() - last_benchmark_at > 180:
                 bt.logging.info("No benchmark is happening. Restarting validator ...")
                 os._exit(0)
                 
