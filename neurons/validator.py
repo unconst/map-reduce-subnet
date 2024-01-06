@@ -266,6 +266,8 @@ def main( config ):
         
         global last_benchmark_at
         
+        last_benchmark_at = time.time()
+        
         hotkey = synapse.dendrite.hotkey
         bt.logging.info(f"Benchmark request from {hotkey}")
                 
@@ -346,7 +348,6 @@ def main( config ):
             # create thread for waiting benchmark result
             thread = Thread(target=wait_for_benchmark_result, args=(hotkey, synapse.miner_uid, ))
             thread.start()
-            last_benchmark_at = time.time()
             return synapse
         except Exception as e:
             # if failed, set joining to false
@@ -490,14 +491,29 @@ def main( config ):
         
 
     def speedtest():
-        responses = dendrite.query(metagraph.axons, protocol.SpeedTest(version = utils.get_my_version()), timeout = 40)
+        
+        # choose axons for speed test
+        axons_for_speedtest = []
+        for uid, axon in enumerate(metagraph.axons):
+            old_speedtest_result = speedtest_results.get(axon.ip, None)
+            if old_speedtest_result is None:
+                axons_for_speedtest.append((uid, axon))
+                continue
+            # Speedtest every 72 hours
+            if time.time() - old_speedtest_result['timestamp'] > 3600 * 72:
+                axons_for_speedtest.append((uid, axon))
+                continue
+
+        responses = dendrite.query([axon for uid, axon in axons_for_speedtest], protocol.SpeedTest(version = utils.get_my_version()), timeout = 40)
         timestamp = time.time()
         for response, miner in zip(responses, miner_status):
             if response.result is not None:
                 miner['url'] = response.result['result']['url']
                 miner['isp'] = response.result['isp']
                 miner['server_id'] = response.result['server']['id']
-                miner['timestamp'] = response.result['timestamp']
+                date_time = datetime.fromisoformat(miner['timestamp'].rstrip("Z"))
+                # Convert datetime object to Unix timestamp
+                miner['timestamp'] = int(date_time.timestamp())
                 miner['external_ip'] = response.result['interface']['externalIp']
                 
                 # Verify speedtest result
@@ -507,13 +523,9 @@ def main( config ):
                     bt.logging.error(f"Miner {miner['uid']}: Failed to verify speedtest result")
                     continue
                 
-                date_time = datetime.fromisoformat(miner['timestamp'].rstrip("Z"))
+                time.sleep(0.05)
 
-                # Convert datetime object to Unix timestamp
-                unix_timestamp = int(date_time.timestamp())
-
-                
-                if abs(unix_timestamp - verify_data['result']['date']) > 2:
+                if abs(miner['timestamp'] - verify_data['result']['date']) > 2:
                     bt.logging.error(f"Miner {miner['uid']}: Timestamp mismatch {verify_data['result']['date']} {miner['timestamp']}")
                     continue
                 
@@ -524,7 +536,23 @@ def main( config ):
                 miner['upload'] = verify_data['result']['upload']
                 miner['download'] = verify_data['result']['download']
                 miner['ping'] = verify_data['result']['latency']
-
+                
+                speedtest_results[miner['external_ip']] = {
+                    'timestamp': miner['timestamp'],
+                    'url': miner['url'],
+                    'isp': miner['isp'],
+                    'server_id': miner['server_id'],
+                    'timestamp': miner['timestamp'],
+                    'external_ip': miner['external_ip'],
+                    'upload': miner['upload'],
+                    'download': miner['download'],
+                    'ping': miner['ping'],
+                }
+                
+        # save speedtest result
+        with open('speedtest_results.json', 'w') as f:
+            json.dump(speedtest_results, f, indent=2)
+        
     init_miner_status()
     
     # Attach determiners which functions are called when servicing a request.
@@ -563,6 +591,7 @@ def main( config ):
     
     last_updated_block = subtensor.block - 190
     
+    
     scores_file = "scores.pt"
     try:
         scores = torch.load(scores_file)
@@ -570,6 +599,14 @@ def main( config ):
     except:
         scores = torch.zeros_like(metagraph.S, dtype=torch.float32)
         bt.logging.info(f"Initialized all scores to 0")
+    
+    # load speedtest results
+    try:
+        with open('speedtest_results.json') as f:
+            speedtest_results = json.load(f)
+            bt.logging.info(f"Loaded speedtest results from save file: {json.dumps(speedtest_results, indent=2)}")
+    except:
+        pass
     
     # set all nodes without ips set to 0
     scores = scores * torch.Tensor([metagraph.neurons[uid].axon_info.ip != '0.0.0.0' for uid in metagraph.uids])
@@ -581,7 +618,7 @@ def main( config ):
             # Below: Periodically update our knowledge of the network graph.
             metagraph = subtensor.metagraph(config.netuid)
             
-            if last_benchmark_at > 0 and time.time() - last_benchmark_at > 100:
+            if last_benchmark_at > 0 and time.time() - last_benchmark_at > 120:
                 bt.logging.info("No benchmark is happening. Restarting validator ...")
                 os._exit(0)
                 
