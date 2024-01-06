@@ -613,6 +613,9 @@ def main( config ):
     step = 0
 
     alpha = 0.8
+    
+    global last_benchmark_at
+    
     last_benchmark_at = time.time()
     while True:
         try:
@@ -620,7 +623,7 @@ def main( config ):
             metagraph = subtensor.metagraph(config.netuid)
             
             bt.logging.info(f"Last benchmarked at: {last_benchmark_at}")
-            if last_benchmark_at > 0 and time.time() - last_benchmark_at > 180:
+            if last_benchmark_at > 0 and time.time() - last_benchmark_at > 300:
                 bt.logging.info("No benchmark is happening. Restarting validator ...")
                 os._exit(0)
                 
