@@ -511,7 +511,7 @@ def main( config ):
                 miner['url'] = response.result['result']['url']
                 miner['isp'] = response.result['isp']
                 miner['server_id'] = response.result['server']['id']
-                date_time = datetime.fromisoformat(miner['timestamp'].rstrip("Z"))
+                date_time = datetime.fromisoformat(response.result['timestamp'].rstrip("Z"))
                 # Convert datetime object to Unix timestamp
                 miner['timestamp'] = int(date_time.timestamp())
                 miner['external_ip'] = response.result['interface']['externalIp']
