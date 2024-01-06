@@ -618,6 +618,7 @@ def main( config ):
             # Below: Periodically update our knowledge of the network graph.
             metagraph = subtensor.metagraph(config.netuid)
             
+            bt.logging.info(f"Last benchmarked at: {last_benchmark_at}")
             if last_benchmark_at > 0 and time.time() - last_benchmark_at > 120:
                 bt.logging.info("No benchmark is happening. Restarting validator ...")
                 os._exit(0)
