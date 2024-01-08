@@ -111,6 +111,8 @@ class BenchmarkResult( pydantic.BaseModel ):
     duration: Optional[int] = None
     data_length: Optional[int] = None
     free_memory: Optional[int] = None
+    upload: Optional[int] = None
+    download: Optional[int] = None
 
 """
 Speed test

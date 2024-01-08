@@ -81,9 +81,14 @@ speedtest_results = {}
 
 # Global variable to last benchmark time
 last_benchmark_at = 0
+
+# Global variable to store validator status
+status = {}
     
 # Main takes the config and starts the validator.
 def main( config ):
+
+    global status
 
     # Activating Bittensor's logging with the set configurations.
     bt.logging(config=config, logging_dir=config.full_path)
@@ -135,7 +140,7 @@ def main( config ):
                 uid = miner['uid']
                 speedtest_scores[uid] = miner['upload'] * 0.5 + miner['download'] * 0.5
                 benchmark_scores[uid] = miner['speed']
-                bandwidth_scores[uid] = min(miner['free_memory'], 256 * 1024 * 1024 * 1024 )
+                bandwidth_scores[uid] = min(miner['free_memory'], 512 * 1024 * 1024 * 1024 )
                 ip = metagraph.neurons[uid].axon_info.ip
                 ip_count[ip] = ip_count.get(ip, 0) + 1
         
@@ -152,7 +157,7 @@ def main( config ):
         # set bandwidth score to 0 if speed score is 0
         bandwidth_scores = bandwidth_scores * torch.Tensor([benchmark_scores[uid] > 0 for uid in metagraph.uids])
         bandwidth_scores = torch.nn.functional.normalize(bandwidth_scores, p=1.0, dim=0)
-        scores = speedtest_scores * 0.6 + benchmark_scores * 0.1 + bandwidth_scores * 0.3
+        scores = speedtest_scores * 0.55 + benchmark_scores * 0.05 + bandwidth_scores * 0.4
         return scores
     
     def init_miner_status():
@@ -462,6 +467,8 @@ def main( config ):
             bandwidth = miner['bandwidth'],
             speed = miner['speed'],
             free_memory = miner['free_memory'],
+            upload = miner['upload'],
+            download = miner['download']
         ) for miner in miner_status ]
         return synapse
 
@@ -563,7 +570,13 @@ def main( config ):
                 # save speedtest result
                 with open('speedtest_results.json', 'w') as f:
                     json.dump(speedtest_results, f, indent=2)
-        
+    
+    # Save Validator Status
+    def save_status():
+        global status
+        with open('status.json', 'w') as f:
+            json.dump(status, f, indent=2)
+    
     init_miner_status()
     
     # Attach determiners which functions are called when servicing a request.
@@ -600,9 +613,6 @@ def main( config ):
     scores = torch.ones_like(metagraph.S, dtype=torch.float32)
     bt.logging.info(f"Weights: {scores}")
     
-    last_updated_block = subtensor.block - 190
-    
-    
     scores_file = "scores.pt"
     try:
         scores = torch.load(scores_file)
@@ -620,6 +630,16 @@ def main( config ):
             bt.logging.info(f"Loaded speedtest results from save file: {json.dumps(speedtest_results, indent=2)}")
     except:
         pass
+ 
+    # load validator status
+    try:
+        with open('status.json') as f:
+            status = json.load(f)
+            bt.logging.info(f"Loaded status from save file: {json.dumps(status, indent=2)}")
+    except:
+        status = {
+            'last_updated_block': subtensor.block - 180,
+        }
     
     # set all nodes without ips set to 0
     scores = scores * torch.Tensor([metagraph.neurons[uid].axon_info.ip != '0.0.0.0' for uid in metagraph.uids])
@@ -650,8 +670,8 @@ def main( config ):
                 log_miner_status()
             # Periodically update the weights on the Bittensor blockchain.
             current_block = subtensor.block
-            bt.logging.info(f"Last updated block: {last_updated_block}, current block: {current_block}")
-            if current_block - last_updated_block > 200:
+            bt.logging.info(f"Last updated block: {status['last_updated_block']}, current block: {current_block}")
+            if current_block - status['last_updated_block'] > 200:
                 
                 # Skip setting weight if there are miners benchmarking or not benchmarked yet
                 is_benchmarking = False
@@ -662,7 +682,7 @@ def main( config ):
                         break
                         
                 if is_benchmarking:
-                    if current_block - last_updated_block < 400:
+                    if current_block - status['last_updated_block'] < 400:
                         step += 1
                         time.sleep(bt.__blocktime__)
                         continue
@@ -707,7 +727,8 @@ def main( config ):
                     bt.logging.success('✅ Successfully set weights.')
                     torch.save(scores, scores_file)
                     bt.logging.info(f"Saved weights to \"{scores_file}\"")
-                    last_updated_block = current_block
+                    status['last_updated_block'] = current_block
+                    save_status()
                     init_miner_status()
                     
                 else: bt.logging.error('Failed to set weights.')    
