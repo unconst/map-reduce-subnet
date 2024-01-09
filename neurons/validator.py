@@ -90,6 +90,7 @@ def main( config ):
 
     global status
     global miner_status
+    global speedtest_results
 
     # Activating Bittensor's logging with the set configurations.
     bt.logging(config=config, logging_dir=config.full_path)
@@ -510,6 +511,7 @@ def main( config ):
     def speedtest():
         
         global speedtest_results
+        global miner_status
         # choose axons for speed test
         axons_for_speedtest = []
         for uid, axon in enumerate(metagraph.axons):
@@ -522,58 +524,60 @@ def main( config ):
                 axons_for_speedtest.append((uid, axon))
                 continue
         bt.logging.info(f"🔵 UIDs for Speed Test: { [uid for uid, axon in axons_for_speedtest]}")
+        if len(axons_for_speedtest) == 0:
+            return
         responses = dendrite.query([axon for uid, axon in axons_for_speedtest], protocol.SpeedTest(version = utils.get_my_version()), timeout = 40)
+        bt.logging.success("Got speedtest results")
         timestamp = time.time()
-        for response, (uid, _) in zip(responses, axons_for_speedtest):
+        for response, (uid, axon) in zip(responses, axons_for_speedtest):
             if response.result is not None:
                 # Convert datetime object to Unix timestamp
                 date_time = datetime.fromisoformat(response.result['timestamp'].rstrip("Z"))
-                
+                timestamp = int(date_time.timestamp())
                 time.sleep(6)
                 
                 # Verify speedtest result
-                verify_data = verify_speedtest_result(miner['url'])
+                verify_data = verify_speedtest_result(response.result['result']['url'])
                 
                 if verify_data is None:
                     bt.logging.error(f"Miner {uid}: Failed to verify speedtest result")
                     continue
 
-                if abs(miner['timestamp'] - verify_data['result']['date']) > 2:
-                    bt.logging.error(f"Miner {uid}: Timestamp mismatch {verify_data['result']['date']} {miner['timestamp']}")
+                if abs(timestamp - verify_data['result']['date']) > 2:
+                    bt.logging.error(f"Miner {uid}: Timestamp mismatch {verify_data['result']['date']} {timestamp}")
                     continue
                 
                 if verify_data['result']['date'] < timestamp - 40:                    
-                    bt.logging.error(f"Miner {uid}: Speedtest timestamp is too old {miner['timestamp']}")
+                    bt.logging.error(f"Miner {uid}: Speedtest timestamp is too old {timestamp}")
                     continue
                 
-                # if miner['timestamp'] < timestamp - 40:                    
-                #     bt.logging.error(f"Miner {miner['uid']}: Speedtest timestamp is too old {miner['timestamp']}")
+                # if timestamp < timestamp - 40:                    
+                #     bt.logging.error(f"Miner {miner['uid']}: Speedtest timestamp is too old {timestamp}")
                 #     continue
                 
                 # miner['upload'] = response.result['upload']['bandwidth'] * 8 / 1000000
                 # miner['download'] = response.result['download']['bandwidth'] * 8 / 1000000
                 # miner['ping'] = response.result['ping']['latency']
-                
-                speedtest_results[miner['external_ip']] = {
-                    'timestamp': miner['timestamp'],
+                speedtest_result = {
+                    'timestamp': timestamp,
                     'url': response.result['result']['url'],
                     'isp': response.result['isp'],
                     'server_id': response.result['server']['id'],
-                    'timestamp': int(date_time.timestamp()),
                     'external_ip': response.result['interface']['externalIp'],
                     'upload': verify_data['result']['upload'],
                     'download': verify_data['result']['download'],
-                    'ping': verify_data['result']['ping'],
+                    'ping': verify_data['result']['latency'],
                 }
+                speedtest_results[axon.ip] = speedtest_result
                 
-                bt.logging.success(f"Miner {miner['uid']} | Download: {miner['download']/1000}/Mbps | Upload: {miner['upload']/1000}/Mbps")
+                bt.logging.success(f"Miner {uid} | Download: {speedtest_result['download']/1000}/Mbps | Upload: {speedtest_result['upload']/1000}/Mbps")
                 
                 # save speedtest result
                 with open('speedtest_results.json', 'w') as f:
                     json.dump(speedtest_results, f, indent=2)
                 
-        for miner in miner_status:
-            speedtest_result = speedtest_results.get(miner['external_ip'], None)
+        for miner, axon in zip(miner_status, metagraph.axons):
+            speedtest_result = speedtest_results.get(axon.ip, None)
             if speedtest_result is None or time.time() - speedtest_result['timestamp'] > 3600 * 72:
                 miner['upload'] = 0
                 miner['download'] = 0
@@ -583,6 +587,7 @@ def main( config ):
             miner['ping'] = speedtest_result['ping']
         
         save_miner_status()
+        bt.logging.success("✅ Speedtest completed")
     
     # Save Validator Status
     def save_status():
@@ -601,13 +606,32 @@ def main( config ):
             with open('miner_status.json') as f:
                 miner_status = json.load(f)
                 for miner in miner_status:
-                    if miner['status'] == 'benchmarking':
+                    if miner['status'] == 'benchmarking' or miner['status'] == 'working':
                         miner['status'] = 'available'
                 bt.logging.info(f"Loaded miner status from save file: {json.dumps(miner_status, indent=2)}")
         except:
-            pass
+            init_miner_status()
     
-    init_miner_status()
+    # load speedtest results
+    try:
+        with open('speedtest_results.json') as f:
+            speedtest_results = json.load(f)
+            bt.logging.info(f"Loaded speedtest results from save file: {json.dumps(speedtest_results, indent=2)}")
+    except:
+        pass
+ 
+    # load miner status
+    load_miner_status()
+ 
+    # load validator status
+    try:
+        with open('status.json') as f:
+            status = json.load(f)
+            bt.logging.info(f"Loaded status from save file: {json.dumps(status, indent=2)}")
+    except:
+        status = {
+            'last_updated_block': subtensor.block - 180,
+        }
     
     # Attach determiners which functions are called when servicing a request.
     bt.logging.info(f"Attaching forward function to axon.")
@@ -651,29 +675,6 @@ def main( config ):
         scores = torch.zeros_like(metagraph.S, dtype=torch.float32)
         bt.logging.info(f"Initialized all scores to 0")
     
-    global speedtest_results
-    
-    # load speedtest results
-    try:
-        with open('speedtest_results.json') as f:
-            speedtest_results = json.load(f)
-            bt.logging.info(f"Loaded speedtest results from save file: {json.dumps(speedtest_results, indent=2)}")
-    except:
-        pass
- 
-    # load miner status
-    load_miner_status()
- 
-    # load validator status
-    try:
-        with open('status.json') as f:
-            status = json.load(f)
-            bt.logging.info(f"Loaded status from save file: {json.dumps(status, indent=2)}")
-    except:
-        status = {
-            'last_updated_block': subtensor.block - 180,
-        }
-    
     # set all nodes without ips set to 0
     scores = scores * torch.Tensor([metagraph.neurons[uid].axon_info.ip != '0.0.0.0' for uid in metagraph.uids])
     step = 0
@@ -699,11 +700,15 @@ def main( config ):
                 for miner in miner_status:
                     if miner['status'] == 'benchmarked':
                         bt.logging.info(f"Miner {miner['uid']} | Speed: {utils.human_readable_size(miner['speed'])}/s | Bandwidth: {utils.human_readable_size(utils.calc_bandwidth_from_memory(miner['free_memory']))}")
+                # Speed Test                
+                speedtest()
+                
             if step % 20 == 0:
                 log_miner_status()
             # Periodically update the weights on the Bittensor blockchain.
             current_block = subtensor.block
             bt.logging.info(f"Last updated block: {status['last_updated_block']}, current block: {current_block}")
+                
             if current_block - status['last_updated_block'] > 200:
                 
                 # Skip setting weight if there are miners benchmarking or not benchmarked yet
@@ -731,9 +736,6 @@ def main( config ):
                             os._exit(0)
                 
                 bt.logging.success("Updating score ...")
-                
-                # Speed Test                
-                speedtest()
                         
                 new_scores = calculate_score()
                 
