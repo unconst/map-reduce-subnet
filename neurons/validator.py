@@ -467,20 +467,31 @@ def main( config ):
             synapse.version = utils.get_my_version()
             bt.logging.error(f"Benchmark Results: Version mismatch {synapse.version}")
             return synapse
+        bt.logging.info(f"benchmark results: {synapse}")
         # Check if the master process is running
         # Get the result from the master process
-        synapse.results = [ {
-            "duration" : miner['duration'],
-            "data_length" : miner['data_length'],
-            "bandwidth" : miner['bandwidth'],
-            "speed" : miner['speed'],
-            "free_memory" : miner['free_memory'],
-            "upload" : miner['upload'],
-            "download" : miner['download']
-        } for miner in miner_status ]
-        synapse.results = miner_status
+        # synapse.results = [ {
+        #     "duration" : miner['duration'],
+        #     "data_length" : miner['data_length'],
+        #     "bandwidth" : miner['bandwidth'],
+        #     "speed" : miner['speed'],
+        #     "free_memory" : miner['free_memory'],
+        #     "upload" : miner['upload'],
+        #     "download" : miner['download']
+        # } for miner in miner_status ]0
+        
+        # synapse.results = miner_status
+        synapse.results = []
+        for miner in miner_status:
+            synapse.results.append({
+                'bandwidth': miner['bandwidth'],
+                'speed': miner['speed'],
+                'free_memory': miner['free_memory'],
+                'upload': miner['upload'],
+                'download': miner['download'],
+            })
         synapse.bots = []
-        bt.logging.info(f"Get benchmark result request from {hotkey} {synapse.results}")
+        bt.logging.info(f"Benchmark results: {hotkey} {synapse.results}")
         return synapse
 
     def blacklist_get_benchmark_result( synapse: protocol.BenchmarkResults ) -> Tuple[bool, str]:
@@ -642,7 +653,7 @@ def main( config ):
         blacklist_fn = blacklist_request_benchmark
     ).attach(
         forward_fn = get_benchmark_result,
-        # blacklist_fn = blacklist_get_benchmark_result
+        blacklist_fn = blacklist_get_benchmark_result
     )
 
 
