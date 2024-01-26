@@ -12,6 +12,8 @@ from dist_validator import start_master_process
 from dist_miner import start_miner_dist_process
 from threading import Thread
 import json
+from speedtest import verify_speedtest_result
+from datetime import datetime
 
 def get_validator_config_from_json():
     """
