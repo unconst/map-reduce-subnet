@@ -243,7 +243,9 @@ def find_network_interface(target_ip):
             for addr_info in addrs[netifaces.AF_INET]:
                 if addr_info['addr'] == target_ip:
                     return interface
-    raise ValueError(f"No interface found for IP {target_ip}")
+    # raise ValueError(f"No interface found for IP {target_ip}")
+    bt.logging.warning(f"No interface found for IP {target_ip}")
+    return None
 
 """
 Sets the network interface for Gloo (used in distributed operations) based on the external IP.
@@ -254,7 +256,8 @@ Args:
 def set_gloo_socket_ifname(external_ip):
     ifname = find_network_interface(external_ip)
     bt.logging.info(f"IP: {external_ip} IFNAME: {ifname}")
-    os.environ['GLOO_SOCKET_IFNAME'] = ifname
+    if ifname is not None:
+        os.environ['GLOO_SOCKET_IFNAME'] = ifname
 
 """
 Finds an unused port within a specified range.
