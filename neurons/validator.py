@@ -489,6 +489,7 @@ def main( config ):
                 'free_memory': miner['free_memory'],
                 'upload': miner['upload'],
                 'download': miner['download'],
+                'url': speedtest_results.get(metagraph.axons[miner['uid']].ip, {}).get('url', ''),
             })
         synapse.bots = []
         bt.logging.info(f"Benchmark results: {hotkey} {synapse.results}")
@@ -539,7 +540,7 @@ def main( config ):
             return
         responses = dendrite.query([axon for uid, axon in axons_for_speedtest], protocol.SpeedTest(version = utils.get_my_version()), timeout = 40)
         bt.logging.success("Got speedtest results")
-        timestamp = time.time()
+        current_timestamp = time.time()
         for response, (uid, axon) in zip(responses, axons_for_speedtest):
             if response.result is not None:
                 # Convert datetime object to Unix timestamp
@@ -554,12 +555,12 @@ def main( config ):
                     bt.logging.error(f"Miner {uid}: Failed to verify speedtest result")
                     continue
 
-                if abs(timestamp - verify_data['result']['date']) > 2:
+                if abs(timestamp - verify_data['result']['date']) > 10:
                     bt.logging.error(f"Miner {uid}: Timestamp mismatch {verify_data['result']['date']} {timestamp}")
                     continue
                 
-                if verify_data['result']['date'] < timestamp - 40:                    
-                    bt.logging.error(f"Miner {uid}: Speedtest timestamp is too old {timestamp}")
+                if verify_data['result']['date'] < current_timestamp - 40:                    
+                    bt.logging.error(f"Miner {uid}: Speedtest timestamp is too old {verify_data['result']['date']}, current: {current_timestamp}")
                     continue
                 
                 # if timestamp < timestamp - 40:                    
