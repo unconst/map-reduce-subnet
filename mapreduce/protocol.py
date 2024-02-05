@@ -98,8 +98,8 @@ class RequestBenchmark( MapSynapse ):
 Synapse message encapsulating the results of a benchmarking operation.
 """
 class BenchmarkResults( MapSynapse ):
-    results: Optional[List] = None
-    bots: Optional[List] = None
+    results: Optional[List] = []
+    bots: Optional[List] = []
     
 """
 Defines the structure for the results of a benchmarking operation, 

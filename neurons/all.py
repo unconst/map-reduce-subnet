@@ -12,6 +12,8 @@ from dist_validator import start_master_process
 from dist_miner import start_miner_dist_process
 from threading import Thread
 import json
+from speedtest import verify_speedtest_result
+from datetime import datetime
 
 def get_validator_config_from_json():
     """
@@ -40,7 +42,6 @@ def get_config():
     parser.add_argument( '--netuid', type = int, default = validator_config.get('netuid', 10), help = "The chain subnet uid." )
     parser.add_argument( '--wallet.name', default = validator_config.get('wallet.name', 'default'), help = "Wallet name" )
     parser.add_argument( '--wallet.hotkey', default = validator_config.get('wallet.hotkey', 'default'), help = "Wallet hotkey" )
-    parser.add_argument ( '--port.range', type = str, default = validator_config.get('wallet.hotkey', '9301:9310'), help = "Opened Port range for miner" )
     parser.add_argument( '--auto_update', default = validator_config.get('auto_update', 'yes'), help = "Auto update" ) # yes, no
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
@@ -75,9 +76,22 @@ processes = {}
 
 # Global variable to store miner status
 miner_status = []
+
+# Global variable to store speed
+speedtest_results = {}
+
+# Global variable to last benchmark time
+last_benchmark_at = 0
+
+# Global variable to store validator status
+status = {}
     
 # Main takes the config and starts the validator.
 def main( config ):
+
+    global status
+    global miner_status
+    global speedtest_results
 
     # Activating Bittensor's logging with the set configurations.
     bt.logging(config=config, logging_dir=config.full_path)
@@ -120,14 +134,16 @@ def main( config ):
 
     def calculate_score():
         scores = torch.zeros_like(metagraph.S, dtype=torch.float32)
-        speed_scores = torch.zeros_like(metagraph.S, dtype=torch.float32)
+        speedtest_scores = torch.zeros_like(metagraph.S, dtype=torch.float32)
+        benchmark_scores = torch.zeros_like(metagraph.S, dtype=torch.float32)
         bandwidth_scores = torch.zeros_like(metagraph.S, dtype=torch.float32)
         ip_count = {}
         for miner in miner_status:
-            if miner['status'] == 'benchmarked':
+            if miner['status'] != "failed":
                 uid = miner['uid']
-                speed_scores[uid] = miner['speed']
-                bandwidth_scores[uid] = min(miner['free_memory'], 60 * 1024 * 1024 * 1024 )
+                speedtest_scores[uid] = miner['upload'] * 0.5 + miner['download'] * 0.5
+                benchmark_scores[uid] = miner['speed']
+                bandwidth_scores[uid] = min(miner['free_memory'], 512 * 1024 * 1024 * 1024 )
                 ip = metagraph.neurons[uid].axon_info.ip
                 ip_count[ip] = ip_count.get(ip, 0) + 1
         
@@ -135,14 +151,16 @@ def main( config ):
         for miner in miner_status:
             if miner['status'] == 'benchmarked':
                 ip = metagraph.neurons[uid].axon_info.ip
-                speed_scores[uid] = speed_scores[uid] / ip_count[ip]
+                speedtest_scores[uid] = speedtest_scores[uid] / ip_count[ip]
+                benchmark_scores[uid] = benchmark_scores[uid] / ip_count[ip]
                 bandwidth_scores[uid] = bandwidth_scores[uid] / ip_count[ip]
         
-        speed_scores = torch.nn.functional.normalize(speed_scores, p=1.0, dim=0)
+        speedtest_scores = torch.nn.functional.normalize(speedtest_scores, p=1.0, dim=0)
+        benchmark_scores = torch.nn.functional.normalize(benchmark_scores, p=1.0, dim=0)
         # set bandwidth score to 0 if speed score is 0
-        bandwidth_scores = bandwidth_scores * torch.Tensor([speed_scores[uid] > 0 for uid in metagraph.uids])
+        bandwidth_scores = bandwidth_scores * torch.Tensor([benchmark_scores[uid] > 0 for uid in metagraph.uids])
         bandwidth_scores = torch.nn.functional.normalize(bandwidth_scores, p=1.0, dim=0)
-        scores = speed_scores * 0.5 + bandwidth_scores * 0.5
+        scores = speedtest_scores * 0.55 + benchmark_scores * 0.05 + bandwidth_scores * 0.4
         return scores
     
     def init_miner_status():
@@ -157,6 +175,8 @@ def main( config ):
                     'status': 'unavailable',
                     'timestamp': 0,
                     'retry': 0,
+                    'upload': 0,
+                    'download': 0,
                 })
         else:
             for uid, hotkey in enumerate(metagraph.hotkeys):
@@ -168,6 +188,13 @@ def main( config ):
                     miner_status[uid]['bandwidth'] = 0
                     miner_status[uid]['bandwidth_updated_at'] = 0
                 miner_status[uid]['retry'] = 0
+        save_miner_status()
+    
+    def clear_benchmark_processes():
+        for hotkey in processes:
+            if processes[hotkey].get('benchmarking', False):
+                processes[hotkey]['process'].terminate()
+                del processes[hotkey]
         
     # Choose miner to benchmark
     def choose_miner():
@@ -217,7 +244,7 @@ def main( config ):
                 return
             if processes[hotkey]['output_queue'].empty():
                 time.sleep(1)
-                if time.time() - start_at > 3600:
+                if time.time() - start_at > 60:
                     bt.logging.error(f'Timeout while waiting for benchmark result {miner_uid}, exiting ...')
                     break
                 continue
@@ -229,6 +256,7 @@ def main( config ):
                     f'Speed: {utils.human_readable_size(result.speed)}/s | '\
             )
             bt.logging.success(log)
+            bt.logging.info(f"Benchmarked miners: { len([miner for miner in miner_status if miner['status'] == 'benchmarked'])}")
             if result.bandwidth == 50 * 1024 * 1024: # 50 MB for speed test
                 miner_status[miner_uid]['status'] = 'speed_tested'
             else:
@@ -238,12 +266,18 @@ def main( config ):
             miner_status[miner_uid]['bandwidth'] = result.bandwidth
             miner_status[miner_uid]['bandwidth_updated_at'] = time.time()
             processes[hotkey]['input_queue'].put('exit')
+            save_miner_status()
             break
     
     """
     Process benchmark request
     """
     def request_benchmark( synapse: protocol.RequestBenchmark ) -> protocol.RequestBenchmark:
+        
+        global last_benchmark_at
+        
+        last_benchmark_at = time.time()
+        
         hotkey = synapse.dendrite.hotkey
         bt.logging.info(f"Benchmark request from {hotkey}")
                 
@@ -285,7 +319,7 @@ def main( config ):
             synapse.job.client_hotkey = hotkey
             synapse.job.master_addr = axon.external_ip
             synapse.job.master_port = utils.get_unused_port(9000, 9300)
-            
+            synapse.job.session_time = 60
             miner_bandwidth = miner.get('bandwidth', 0)
             current_bandwidth = utils.calc_bandwidth_from_memory(miner.get('free_memory',0))
             # If the miner got bandwidth benchmark already, use 100 MB bandwidth for benchmarking
@@ -293,7 +327,7 @@ def main( config ):
             # if miner_bandwidth > 0:
             #     if (time.time() - miner.get('bandwidth_updated_at', 0) < 6 * 3600) and miner_bandwidth == validator_config["max_bandwidth"] or current_bandwidth > miner_bandwidth:
             #         synapse.job.bandwidth = 100 * 1024 * 1024
-            synapse.job.bandwidth = 30 * 1024 * 1024 # 30 MB
+            synapse.job.bandwidth = 10 * 1024 * 1024 # 10 MB
             
             bt.logging.info("⌛ Starting benchmarking process")
             bt.logging.trace(synapse.job)
@@ -379,7 +413,7 @@ def main( config ):
                 input_queue = mp.Queue()
                 output_queue = mp.Queue()
                 synapse.job.status = "init"
-
+                
                 # Choose available miners to join.
                 miners = [(int(uid), axon) for uid, axon, miner in zip(metagraph.uids, metagraph.axons, miner_status) if axon.is_serving and ((miner['status'] == 'available' and utils.calc_bandwidth_from_memory(miner.get('free_memory',0)) >= synapse.job.bandwidth) or (miner['status'] == 'benchmarked' and utils.calc_bandwidth_from_memory(miner.get('free_memory',0)) >= synapse.job.bandwidth))]
                 # sort miners by score
@@ -423,22 +457,43 @@ def main( config ):
     
     # Prepare benchmark result, benchmark bot information 
     def get_benchmark_result( synapse: protocol.BenchmarkResults) -> protocol.BenchmarkResults:
+        
+        global miner_status
+        
         hotkey = synapse.dendrite.hotkey
         
         bt.logging.info(f"Get benchmark result request from {hotkey}")
         # Version checking
         if not utils.check_version(synapse.version):
             synapse.version = utils.get_my_version()
+            bt.logging.error(f"Benchmark Results: Version mismatch {synapse.version}")
             return synapse
+        bt.logging.info(f"benchmark results: {synapse}")
         # Check if the master process is running
         # Get the result from the master process
-        synapse.results = [ protocol.BenchmarkResult(
-            duration = miner['duration'],
-            data_length = miner['data_length'],
-            bandwidth = miner['bandwidth'],
-            speed = miner['speed'],
-            free_memory = miner['free_memory'],
-        ) for miner in miner_status ]
+        # synapse.results = [ {
+        #     "duration" : miner['duration'],
+        #     "data_length" : miner['data_length'],
+        #     "bandwidth" : miner['bandwidth'],
+        #     "speed" : miner['speed'],
+        #     "free_memory" : miner['free_memory'],
+        #     "upload" : miner['upload'],
+        #     "download" : miner['download']
+        # } for miner in miner_status ]0
+        
+        # synapse.results = miner_status
+        synapse.results = []
+        for miner in miner_status:
+            synapse.results.append({
+                'bandwidth': miner['bandwidth'],
+                'speed': miner['speed'],
+                'free_memory': miner['free_memory'],
+                'upload': miner['upload'],
+                'download': miner['download'],
+                'url': speedtest_results.get(metagraph.axons[miner['uid']].ip, {}).get('url', ''),
+            })
+        synapse.bots = []
+        bt.logging.info(f"Benchmark results: {hotkey} {synapse.results}")
         return synapse
 
     def blacklist_get_benchmark_result( synapse: protocol.BenchmarkResults ) -> Tuple[bool, str]:
@@ -450,6 +505,7 @@ def main( config ):
         if hotkey not in allowed_hotkeys:
             return True, ""
         return False, ""
+        
     
     # The following functions control the miner's response to incoming requests.
     # The blacklist function decides if a request should be ignored.
@@ -552,8 +608,8 @@ def main( config ):
             synapse.joining = False
             synapse.reason = str(e)
             return synapse
+        
     
-
     def log_miner_status():
         for miner in miner_status:
             color = '0' #green
@@ -569,9 +625,132 @@ def main( config ):
                 bt.logging.info(f"Miner {miner['uid']} \033[{color}m{miner['status']}\033[0m | \033[{color}m{scores[miner['uid']]}\033[0m | Speed: \033[{color}m{utils.human_readable_size(miner.get('speed', 0))}/s\033[0m | Bandwidth: \033[{color}m{utils.human_readable_size(utils.calc_bandwidth_from_memory(miner['free_memory']))}\033[0m | Free Memory: \033[{color}m{utils.human_readable_size(miner.get('free_memory', 0))}\033[0m {miner.get('retry', 0) > 0 and ('| Retry: ' + str(miner['retry'])) or ''}")
         
 
-    init_miner_status()
+    def speedtest():
+        
+        global speedtest_results
+        global miner_status
+        # choose axons for speed test
+        axons_for_speedtest = []
+        for uid, axon in enumerate(metagraph.axons):
+            old_speedtest_result = speedtest_results.get(axon.ip, None)
+            if old_speedtest_result is None:
+                axons_for_speedtest.append((uid, axon))
+                continue
+            # Speedtest every 72 hours
+            if time.time() - old_speedtest_result['timestamp'] > 3600 * 72:
+                axons_for_speedtest.append((uid, axon))
+                continue
+        bt.logging.info(f"🔵 UIDs for Speed Test: { [uid for uid, axon in axons_for_speedtest]}")
+        if len(axons_for_speedtest) == 0:
+            return
+        responses = dendrite.query([axon for uid, axon in axons_for_speedtest], protocol.SpeedTest(version = utils.get_my_version()), timeout = 40)
+        bt.logging.success("Got speedtest results")
+        timestamp = time.time()
+        for response, (uid, axon) in zip(responses, axons_for_speedtest):
+            if response.result is not None:
+                # Convert datetime object to Unix timestamp
+                date_time = datetime.fromisoformat(response.result['timestamp'].rstrip("Z"))
+                timestamp = int(date_time.timestamp())
+                time.sleep(6)
+                
+                # Verify speedtest result
+                verify_data = verify_speedtest_result(response.result['result']['url'])
+                
+                if verify_data is None:
+                    bt.logging.error(f"Miner {uid}: Failed to verify speedtest result")
+                    continue
+
+                if abs(timestamp - verify_data['result']['date']) > 2:
+                    bt.logging.error(f"Miner {uid}: Timestamp mismatch {verify_data['result']['date']} {timestamp}")
+                    continue
+                
+                if verify_data['result']['date'] < timestamp - 40:                    
+                    bt.logging.error(f"Miner {uid}: Speedtest timestamp is too old {timestamp}")
+                    continue
+                
+                # if timestamp < timestamp - 40:                    
+                #     bt.logging.error(f"Miner {miner['uid']}: Speedtest timestamp is too old {timestamp}")
+                #     continue
+                
+                # miner['upload'] = response.result['upload']['bandwidth'] * 8 / 1000000
+                # miner['download'] = response.result['download']['bandwidth'] * 8 / 1000000
+                # miner['ping'] = response.result['ping']['latency']
+                speedtest_result = {
+                    'timestamp': timestamp,
+                    'url': response.result['result']['url'],
+                    'isp': response.result['isp'],
+                    'server_id': response.result['server']['id'],
+                    'external_ip': response.result['interface']['externalIp'],
+                    'upload': verify_data['result']['upload'],
+                    'download': verify_data['result']['download'],
+                    'ping': verify_data['result']['latency'],
+                }
+                speedtest_results[axon.ip] = speedtest_result
+                
+                bt.logging.success(f"Miner {uid} | Download: {speedtest_result['download']/1000}/Mbps | Upload: {speedtest_result['upload']/1000}/Mbps")
+                
+                # save speedtest result
+                with open('speedtest_results.json', 'w') as f:
+                    json.dump(speedtest_results, f, indent=2)
+                
+        for miner, axon in zip(miner_status, metagraph.axons):
+            speedtest_result = speedtest_results.get(axon.ip, None)
+            if speedtest_result is None or time.time() - speedtest_result['timestamp'] > 3600 * 72:
+                miner['upload'] = 0
+                miner['download'] = 0
+                continue
+            miner['upload'] = speedtest_result['upload']
+            miner['download'] = speedtest_result['download']
+            miner['ping'] = speedtest_result['ping']
+        
+        save_miner_status()
+        bt.logging.success("✅ Speedtest completed")
     
-    # Attach determiners which functions are called when servicing a request.
+    # Save Validator Status
+    def save_status():
+        global status
+        with open('status.json', 'w') as f:
+            json.dump(status, f, indent=2)
+    
+    def save_miner_status():
+        global miner_status
+        with open('miner_status.json', 'w') as f:
+            json.dump(miner_status, f, indent=2)
+    
+    def load_miner_status():
+        global miner_status
+        try:
+            with open('miner_status.json') as f:
+                miner_status = json.load(f)
+                for miner in miner_status:
+                    if miner['status'] == 'benchmarking' or miner['status'] == 'working':
+                        miner['status'] = 'available'
+                bt.logging.info(f"Loaded miner status from save file: {json.dumps(miner_status, indent=2)}")
+        except:
+            init_miner_status()
+    
+    # load speedtest results
+    try:
+        with open('speedtest_results.json') as f:
+            speedtest_results = json.load(f)
+            bt.logging.info(f"Loaded speedtest results from save file: {json.dumps(speedtest_results, indent=2)}")
+    except:
+        pass
+ 
+    # load miner status
+    load_miner_status()
+ 
+    # load validator status
+    try:
+        with open('status.json') as f:
+            status = json.load(f)
+            bt.logging.info(f"Loaded status from save file: {json.dumps(status, indent=2)}")
+    except:
+        status = {
+            'last_updated_block': subtensor.block - 180,
+        }
+    
+        # Attach determiners which functions are called when servicing a request.
     bt.logging.info(f"Attaching forward function to axon.")
     axon.attach(
         forward_fn = connect_master,   
@@ -589,6 +768,7 @@ def main( config ):
         blacklist_fn = blacklist_join,
         priority_fn = priority_join
     )
+
 
 
     # Serve passes the axon information to the network + netuid we are hosting on.
@@ -612,8 +792,6 @@ def main( config ):
     scores = torch.ones_like(metagraph.S, dtype=torch.float32)
     bt.logging.info(f"Weights: {scores}")
     
-    last_updated_block = subtensor.block - 90
-    
     scores_file = "scores.pt"
     try:
         scores = torch.load(scores_file)
@@ -626,25 +804,39 @@ def main( config ):
     scores = scores * torch.Tensor([metagraph.neurons[uid].axon_info.ip != '0.0.0.0' for uid in metagraph.uids])
     step = 0
 
-    alpha = 0.7
+    alpha = 0.8
+    
+    global last_benchmark_at
+    
+    last_benchmark_at = time.time()
     while True:
         try:
             # Below: Periodically update our knowledge of the network graph.
+            metagraph = subtensor.metagraph(config.netuid)
+            
+            bt.logging.info(f"Last benchmarked at: {last_benchmark_at}")
+            if last_benchmark_at > 0 and time.time() - last_benchmark_at > 300:
+                bt.logging.error("No benchmark is happening. Restarting validator ...")
+                time.sleep(1)
+                os._exit(0)
+                
             if step % 5 == 0:
-                metagraph = subtensor.metagraph(config.netuid)
-                update_miner_status()            
+                update_miner_status()
                 for miner in miner_status:
                     if miner['status'] == 'benchmarked':
                         bt.logging.info(f"Miner {miner['uid']} | Speed: {utils.human_readable_size(miner['speed'])}/s | Bandwidth: {utils.human_readable_size(utils.calc_bandwidth_from_memory(miner['free_memory']))}")
+                # Speed Test                
+                speedtest()
+                
             if step % 20 == 0:
                 log_miner_status()
-                    
             # Periodically update the weights on the Bittensor blockchain.
             current_block = subtensor.block
-            bt.logging.info(f"Last updated block: {last_updated_block}, current block: {current_block}")
-            if current_block - last_updated_block > 100:
+            bt.logging.info(f"Last updated block: {status['last_updated_block']}, current block: {current_block}")
                 
-                # Skip setting wait if there are miners benchmarking or not benchmarked yet
+            if current_block - status['last_updated_block'] > 200:
+                
+                # Skip setting weight if there are miners benchmarking or not benchmarked yet
                 is_benchmarking = False
                 for miner in miner_status:
                     if miner['status'] == 'benchmarking' or miner['status'] == 'available':
@@ -652,17 +844,33 @@ def main( config ):
                         is_benchmarking = True
                         break
                         
-                if is_benchmarking and current_block - last_updated_block < 360:
-                    step += 1
-                    time.sleep(bt.__blocktime__)
-                    continue
+                if is_benchmarking:
+                    if current_block - status['last_updated_block'] < 400:
+                        step += 1
+                        time.sleep(bt.__blocktime__)
+                        continue
+                    else: 
+                        is_benchmarking = False
+                        for miner in miner_status:
+                            if miner['status'] == 'benchmarked':
+                                is_benchmarking = True
+                                break
+                        if not is_benchmarking:
+                            bt.logging.error("No miner is benchmarked, something wrong")
+                            print("Restarting validator ...")
+                            os._exit(0)
                 
-                bt.logging.success("Updating score ...")                
+                bt.logging.success("Updating score ...")
+                        
                 new_scores = calculate_score()
                 
                 scores = new_scores * alpha + scores * (1 - alpha)
-                                
-                log_miner_status()
+                
+                for uid in range(len(metagraph.uids)):
+                    miner_status[uid]['new_score'] = float(new_scores[uid])
+                    miner_status[uid]['score'] = float(scores[uid])
+                
+                print(json.dumps(miner_status, indent=2))
                 
                 weights = torch.nn.functional.normalize(scores, p=1.0, dim=0)
                 bt.logging.info(f"Setting weights: {weights}")
@@ -679,7 +887,8 @@ def main( config ):
                     bt.logging.success('✅ Successfully set weights.')
                     torch.save(scores, scores_file)
                     bt.logging.info(f"Saved weights to \"{scores_file}\"")
-                    last_updated_block = current_block
+                    status['last_updated_block'] = current_block
+                    save_status()
                     init_miner_status()
                     
                 else: bt.logging.error('Failed to set weights.')    
@@ -687,6 +896,11 @@ def main( config ):
             # Check for auto update
             if step % 5 == 0 and config.auto_update != "no":
                 utils.update_repository()
+            
+            # Check if axon is running
+            if not axon.fast_server.is_running:
+                bt.logging.error("Axon is not running, restarting validator ...")
+                break
             
             step += 1
             time.sleep(bt.__blocktime__)
