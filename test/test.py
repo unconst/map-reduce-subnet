@@ -6,26 +6,15 @@ import bittensor as bt
 from argparse import ArgumentParser
 
 parser = ArgumentParser()
-parser.add_argument('--validator.uid', type = int, default= 0, help='Validator UID')
-parser.add_argument('--netuid', type = int, default=10, help='Map Reduce Subnet NetUID')
-
-bt.subtensor.add_args(parser)
-bt.wallet.add_args(parser)
-
-config = bt.config(
-    parser=parser
-)
-
-wallet = bt.wallet(config=config)
 
 # tensor size for testing, set to 10 MB
 tensor_size = 10 * 1024 * 1024
 bandwidth = tensor_size * 4 # torch.float32 is 4 bytes
 
-def train(rank, peer_count, bandwidth, wallet, validator_uid, network ):
+def train(rank, peer_count, bandwidth):
     bt.logging.info(f"🔷 Starting peer with rank {rank}")
     # Initialize Peer instance
-    peer = Peer(rank, peer_count, bandwidth, wallet, validator_uid, network)
+    peer = Peer(rank, peer_count, parser=parser, bandwidth=bandwidth)
 
     # Initialize process group with the fetched configuration
     peer.init_process_group()
@@ -73,15 +62,13 @@ def train(rank, peer_count, bandwidth, wallet, validator_uid, network ):
     
     bt.logging.success(f"Peer {rank} has finished training.")
 
-bt.logging.info(f"config {config}")
-
 def main():
     peer_count = 3
     processes = []
 
     # Start two peer processes
     for rank in range(1, peer_count + 1):
-        p = mp.Process(target=train, args=(rank, peer_count, tensor_size, wallet, config.validator.uid, config.subtensor.network))
+        p = mp.Process(target=train, args=(rank, peer_count, tensor_size))
         p.start()
         processes.append(p)
 

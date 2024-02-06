@@ -163,6 +163,8 @@ def main( config ):
         return scores
     
     def init_miner_status():
+        global miner_status
+        bt.logging.info(f"Initializing miner status")
         if len(miner_status) == 0:
             for uid, hotkey in enumerate(metagraph.hotkeys):
                 miner_status.append({
@@ -489,6 +491,7 @@ def main( config ):
                 'free_memory': miner['free_memory'],
                 'upload': miner['upload'],
                 'download': miner['download'],
+                'url': speedtest_results.get(metagraph.axons[miner['uid']].ip, {}).get('url', ''),
             })
         synapse.bots = []
         bt.logging.info(f"Benchmark results: {hotkey} {synapse.results}")
@@ -503,7 +506,15 @@ def main( config ):
         if hotkey not in allowed_hotkeys:
             return True, ""
         return False, ""
-        
+
+    def get_miner_status( synapse: protocol.MinerStatus ) -> protocol.MinerStatus:
+        if not utils.check_version(synapse.version):
+            synapse.version = utils.get_my_version()
+            return synapse
+        synapse.version = utils.get_my_version()
+        synapse.available = False
+        return synapse
+    
     def log_miner_status():
         for miner in miner_status:
             color = '0' #green
@@ -526,6 +537,8 @@ def main( config ):
         # choose axons for speed test
         axons_for_speedtest = []
         for uid, axon in enumerate(metagraph.axons):
+            if miner_status[uid] and miner_status[uid]['status'] != 'available':
+                continue
             old_speedtest_result = speedtest_results.get(axon.ip, None)
             if old_speedtest_result is None:
                 axons_for_speedtest.append((uid, axon))
@@ -539,7 +552,7 @@ def main( config ):
             return
         responses = dendrite.query([axon for uid, axon in axons_for_speedtest], protocol.SpeedTest(version = utils.get_my_version()), timeout = 40)
         bt.logging.success("Got speedtest results")
-        timestamp = time.time()
+        current_timestamp = time.time()
         for response, (uid, axon) in zip(responses, axons_for_speedtest):
             if response.result is not None:
                 # Convert datetime object to Unix timestamp
@@ -554,12 +567,12 @@ def main( config ):
                     bt.logging.error(f"Miner {uid}: Failed to verify speedtest result")
                     continue
 
-                if abs(timestamp - verify_data['result']['date']) > 2:
+                if abs(timestamp - verify_data['result']['date']) > 10:
                     bt.logging.error(f"Miner {uid}: Timestamp mismatch {verify_data['result']['date']} {timestamp}")
                     continue
                 
-                if verify_data['result']['date'] < timestamp - 40:                    
-                    bt.logging.error(f"Miner {uid}: Speedtest timestamp is too old {timestamp}")
+                if verify_data['result']['date'] < current_timestamp - 40:                    
+                    bt.logging.error(f"Miner {uid}: Speedtest timestamp is too old {verify_data['result']['date']}, current: {current_timestamp}")
                     continue
                 
                 # if timestamp < timestamp - 40:                    
@@ -620,6 +633,33 @@ def main( config ):
                     if miner['status'] == 'benchmarking' or miner['status'] == 'working':
                         miner['status'] = 'available'
                 bt.logging.info(f"Loaded miner status from save file: {json.dumps(miner_status, indent=2)}")
+                for uid, hotkey in enumerate(metagraph.hotkeys):
+                    if uid >= len(miner_status):
+                        miner_status.append({
+                            'uid': uid,
+                            'hotkey': hotkey,
+                            'free_memory': 0,
+                            'bandwidth': 0,
+                            'speed': 0,
+                            'status': 'unavailable',
+                            'timestamp': 0,
+                            'retry': 0,
+                            'upload': 0,
+                            'download': 0,
+                        })
+                    if miner_status[uid]['hotkey'] != hotkey:
+                        miner_status[uid] = {
+                            'uid': uid,
+                            'hotkey': hotkey,
+                            'free_memory': 0,
+                            'bandwidth': 0,
+                            'speed': 0,
+                            'status': 'unavailable',
+                            'timestamp': 0,
+                            'retry': 0,
+                            'upload': 0,
+                            'download': 0,
+                        }
         except:
             init_miner_status()
     
@@ -648,6 +688,8 @@ def main( config ):
     bt.logging.info(f"Attaching forward function to axon.")
     axon.attach(
         forward_fn = connect_master,   
+    ).attach(
+        forward_fn = get_miner_status,
     ).attach(
         forward_fn = request_benchmark,
         blacklist_fn = blacklist_request_benchmark
@@ -743,7 +785,8 @@ def main( config ):
                                 break
                         if not is_benchmarking:
                             bt.logging.error("No miner is benchmarked, something wrong")
-                            print("Restarting validator ...")
+                            bt.logging.info("Restarting validator ...")
+                            time.sleep(2)
                             os._exit(0)
                 
                 bt.logging.success("Updating score ...")
@@ -762,22 +805,27 @@ def main( config ):
                 bt.logging.info(f"Setting weights: {weights}")
                 # This is a crucial step that updates the incentive mechanism on the Bittensor blockchain.
                 # Miners with higher scores (or weights) receive a larger share of TAO rewards on this subnet.
-                result = subtensor.set_weights(
-                    netuid = config.netuid, # Subnet to set weights on.
-                    wallet = wallet, # Wallet to sign set weights using hotkey.
-                    uids = metagraph.uids, # Uids of the miners to set weights for.
-                    weights = weights, # Weights to set for the miners. 
-                )
-                
-                if result: 
-                    bt.logging.success('✅ Successfully set weights.')
-                    torch.save(scores, scores_file)
-                    bt.logging.info(f"Saved weights to \"{scores_file}\"")
-                    status['last_updated_block'] = current_block
-                    save_status()
-                    init_miner_status()
+                # Set weights until it's successful
+                while True:
+                    result = subtensor.set_weights(
+                        netuid = config.netuid, # Subnet to set weights on.
+                        wallet = wallet, # Wallet to sign set weights using hotkey.
+                        uids = metagraph.uids, # Uids of the miners to set weights for.
+                        weights = weights, # Weights to set for the miners. 
+                        wait_for_inclusion=True,
+                        ttl = 60
+                    )
                     
-                else: bt.logging.error('Failed to set weights.')    
+                    if result: 
+                        bt.logging.success('✅ Successfully set weights.')
+                        torch.save(scores, scores_file)
+                        bt.logging.info(f"Saved weights to \"{scores_file}\"")
+                        status['last_updated_block'] = current_block
+                        save_status()
+                        init_miner_status()
+                        break
+                        
+                    else: bt.logging.error('Failed to set weights.')
                 
             # Check for auto update
             if step % 5 == 0 and config.auto_update != "no":

@@ -172,6 +172,7 @@ Args:
     miner_status (dict, optional): Dictionary containing the status of miners.
 """
 def check_processes(processes, miner_status = None):
+    global update_flag
     while True:
         try:
             keys_to_delete = []
@@ -206,7 +207,7 @@ def check_processes(processes, miner_status = None):
         except Exception as e:
             bt.logging.error(f"Error checking processes: {e}")
             traceback.print_exc()
-        time.sleep(1)
+        time.sleep(0.1)
         
 """
 Checks if any process in the given dictionary is still alive.
@@ -247,6 +248,19 @@ def find_network_interface(target_ip):
     bt.logging.warning(f"No interface found for IP {target_ip}")
     return None
 
+def find_default_interface():
+    # Get the default gateway details
+    gws = netifaces.gateways()
+    default_gateway = gws['default'][netifaces.AF_INET]  # AF_INET for IPv4
+    interface = default_gateway[1]
+    bt.logging.info(f"Default internet interface: {interface}")
+    # Optionally, get the IP address of the default interface
+    addrs = netifaces.ifaddresses(interface)
+    ip_info = addrs[netifaces.AF_INET][0]
+    ip_address = ip_info['addr']
+    bt.logging.info(f"IP Address of default interface: {ip_address}")
+    return interface
+
 """
 Sets the network interface for Gloo (used in distributed operations) based on the external IP.
 
@@ -258,6 +272,8 @@ def set_gloo_socket_ifname(external_ip):
     bt.logging.info(f"IP: {external_ip} IFNAME: {ifname}")
     if ifname is not None:
         os.environ['GLOO_SOCKET_IFNAME'] = ifname
+    else:
+        os.environ['GLOO_SOCKET_IFNAME'] = find_default_interface()
 
 """
 Finds an unused port within a specified range.
@@ -324,7 +340,7 @@ def update_repository():
     with codecs.open(os.path.join(here, '__init__.py'), encoding='utf-8') as init_file:
         version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", init_file.read(), re.M)
         new_version = version_match.group(1)
-        bt.logging.success(f"current version: {mapreduce.__version__}, new version: {new_version}")
+        bt.logging.success(f"local version: {mapreduce.__version__}, remote version: {new_version}")
         if mapreduce.__version__ != new_version:
             os.system("python3 -m pip install -e .")
             set_update_flag()
