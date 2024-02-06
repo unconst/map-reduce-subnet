@@ -172,6 +172,7 @@ Args:
     miner_status (dict, optional): Dictionary containing the status of miners.
 """
 def check_processes(processes, miner_status = None):
+    global update_flag
     while True:
         try:
             keys_to_delete = []
@@ -206,7 +207,7 @@ def check_processes(processes, miner_status = None):
         except Exception as e:
             bt.logging.error(f"Error checking processes: {e}")
             traceback.print_exc()
-        time.sleep(1)
+        time.sleep(0.1)
         
 """
 Checks if any process in the given dictionary is still alive.
