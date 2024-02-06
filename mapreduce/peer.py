@@ -1,6 +1,7 @@
 # peerlib.py
 
 import os
+import argparse
 import torch.distributed as dist
 import torch
 from math import ceil
@@ -27,28 +28,35 @@ class Peer:
     port_range: Port range for gloo, should be allowed in firewall.
     benchmark_max_size: Maximum size of the benchmark in bytes.
     '''
-    def __init__(self, rank, peer_count, bandwidth, wallet: bt.wallet, validator_uid: int = -1, network = 'finney', port_range = "9000:9010", benchmark_max_size = 0):
+    def __init__(self, rank, peer_count, parser = argparse.ArgumentParser(), port_range = "9000:9010", bandwidth = 1e9, benchmark_max_size = 0):
         
-        netuid = 10
         assert rank > 0, "Rank should not be zero"
+        parser.add_argument('--validator.uid', type = int, default= 0, help='Validator UID')
+        parser.add_argument('--netuid', type = int, default= 10, help='Subnet UID')
         
-        metagraph = bt.metagraph(netuid, network=network)
-        metagraph.sync()
-        self.axons = metagraph.axons
+        bt.subtensor.add_args(parser)
+        bt.logging.add_args(parser)
+        bt.wallet.add_args(parser)
+        bt.axon.add_args(parser)
+        config = bt.config(parser)
 
-        if validator_uid >=  0:
-            self.validator_uid = validator_uid
+        self.wallet = bt.wallet( config = config )
+        self.subtensor = bt.subtensor( config = config )
+        self.metagraph = self.subtensor.metagraph(config.netuid)
+        self.axons = self.metagraph.axons
+
+        if config.validator.uid >=  0:
+            self.validator_uid = config.validator.uid
         else:
             self.validator_uid = 0
             
-        self.hotkey = wallet.hotkey
+        self.hotkey = self.wallet.hotkey
         self.rank = rank
         self.peer_count = peer_count
         self.bandwidth = bandwidth
         self.world_size = None
         self.validator_addr = None
         self.validator_port = None
-        self.wallet = wallet
         self.dendrite: bt.dendrite = bt.dendrite(wallet=self.wallet)
         self.port_range = port_range
         self.benchmark_max_size = int(benchmark_max_size)
