@@ -504,7 +504,15 @@ def main( config ):
         if hotkey not in allowed_hotkeys:
             return True, ""
         return False, ""
-        
+
+    def get_miner_status( synapse: protocol.MinerStatus ) -> protocol.MinerStatus:
+        if not utils.check_version(synapse.version):
+            synapse.version = utils.get_my_version()
+            return synapse
+        synapse.version = utils.get_my_version()
+        synapse.available = False
+        return synapse
+    
     def log_miner_status():
         for miner in miner_status:
             color = '0' #green
@@ -527,6 +535,8 @@ def main( config ):
         # choose axons for speed test
         axons_for_speedtest = []
         for uid, axon in enumerate(metagraph.axons):
+            if miner_status[uid]['status'] != 'available':
+                continue
             old_speedtest_result = speedtest_results.get(axon.ip, None)
             if old_speedtest_result is None:
                 axons_for_speedtest.append((uid, axon))
@@ -649,6 +659,8 @@ def main( config ):
     bt.logging.info(f"Attaching forward function to axon.")
     axon.attach(
         forward_fn = connect_master,   
+    ).attach(
+        forward_fn = get_miner_status,
     ).attach(
         forward_fn = request_benchmark,
         blacklist_fn = blacklist_request_benchmark
