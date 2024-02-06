@@ -163,6 +163,8 @@ def main( config ):
         return scores
     
     def init_miner_status():
+        global miner_status
+        bt.logging.info(f"Initializing miner status")
         if len(miner_status) == 0:
             for uid, hotkey in enumerate(metagraph.hotkeys):
                 miner_status.append({
@@ -535,7 +537,7 @@ def main( config ):
         # choose axons for speed test
         axons_for_speedtest = []
         for uid, axon in enumerate(metagraph.axons):
-            if miner_status[uid]['status'] != 'available':
+            if miner_status[uid] and miner_status[uid]['status'] != 'available':
                 continue
             old_speedtest_result = speedtest_results.get(axon.ip, None)
             if old_speedtest_result is None:
@@ -631,6 +633,33 @@ def main( config ):
                     if miner['status'] == 'benchmarking' or miner['status'] == 'working':
                         miner['status'] = 'available'
                 bt.logging.info(f"Loaded miner status from save file: {json.dumps(miner_status, indent=2)}")
+                for uid, hotkey in enumerate(metagraph.hotkeys):
+                    if uid >= len(miner_status):
+                        miner_status.append({
+                            'uid': uid,
+                            'hotkey': hotkey,
+                            'free_memory': 0,
+                            'bandwidth': 0,
+                            'speed': 0,
+                            'status': 'unavailable',
+                            'timestamp': 0,
+                            'retry': 0,
+                            'upload': 0,
+                            'download': 0,
+                        })
+                    if miner_status[uid]['hotkey'] != hotkey:
+                        miner_status[uid] = {
+                            'uid': uid,
+                            'hotkey': hotkey,
+                            'free_memory': 0,
+                            'bandwidth': 0,
+                            'speed': 0,
+                            'status': 'unavailable',
+                            'timestamp': 0,
+                            'retry': 0,
+                            'upload': 0,
+                            'download': 0,
+                        }
         except:
             init_miner_status()
     
@@ -756,7 +785,8 @@ def main( config ):
                                 break
                         if not is_benchmarking:
                             bt.logging.error("No miner is benchmarked, something wrong")
-                            print("Restarting validator ...")
+                            bt.logging.info("Restarting validator ...")
+                            time.sleep(2)
                             os._exit(0)
                 
                 bt.logging.success("Updating score ...")
