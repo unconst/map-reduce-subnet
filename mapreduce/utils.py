@@ -339,7 +339,7 @@ def update_repository():
     with codecs.open(os.path.join(here, '__init__.py'), encoding='utf-8') as init_file:
         version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", init_file.read(), re.M)
         new_version = version_match.group(1)
-        bt.logging.success(f"current version: {mapreduce.__version__}, new version: {new_version}")
+        bt.logging.success(f"local version: {mapreduce.__version__}, remote version: {new_version}")
         if mapreduce.__version__ != new_version:
             os.system("python3 -m pip install -e .")
             set_update_flag()
