@@ -11,6 +11,7 @@ import torch.multiprocessing as mp
 from dist_miner import start_miner_dist_process
 from mapreduce import utils, protocol
 from speedtest import speedtest
+from threading import Thread
 
 processes = {
 
@@ -249,7 +250,7 @@ class Miner:
         # start axon
         self.start_axon()
         
-        self.thread = mp.Process(target=utils.check_processes, args=(processes,))
+        self.thread = Thread(target=utils.check_processes, args=(processes,))
         self.thread.start()
         
         # This loop maintains the miner's operations until intentionally stopped.
