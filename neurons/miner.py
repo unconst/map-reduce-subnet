@@ -158,7 +158,7 @@ class Miner:
             # try to join the group
             bt.logging.info("🔵 Start Process ...")
             queue = mp.Queue()
-            process = mp.Process(target=start_miner_dist_process, args=(queue, axon.external_ip, config.port.range, wallet, synapse.job))
+            process = mp.Process(target=start_miner_dist_process, args=(queue, self.axon.external_ip, config.port.range, self.wallet, synapse.job))
             process.start()
             processes[synapse.job.client_hotkey] = {
                 'process': process,
