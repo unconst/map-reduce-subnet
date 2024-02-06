@@ -763,22 +763,27 @@ def main( config ):
                 bt.logging.info(f"Setting weights: {weights}")
                 # This is a crucial step that updates the incentive mechanism on the Bittensor blockchain.
                 # Miners with higher scores (or weights) receive a larger share of TAO rewards on this subnet.
-                result = subtensor.set_weights(
-                    netuid = config.netuid, # Subnet to set weights on.
-                    wallet = wallet, # Wallet to sign set weights using hotkey.
-                    uids = metagraph.uids, # Uids of the miners to set weights for.
-                    weights = weights, # Weights to set for the miners. 
-                )
-                
-                if result: 
-                    bt.logging.success('✅ Successfully set weights.')
-                    torch.save(scores, scores_file)
-                    bt.logging.info(f"Saved weights to \"{scores_file}\"")
-                    status['last_updated_block'] = current_block
-                    save_status()
-                    init_miner_status()
+                # Set weights until it's successful
+                while True:
+                    result = subtensor.set_weights(
+                        netuid = config.netuid, # Subnet to set weights on.
+                        wallet = wallet, # Wallet to sign set weights using hotkey.
+                        uids = metagraph.uids, # Uids of the miners to set weights for.
+                        weights = weights, # Weights to set for the miners. 
+                        wait_for_inclusion=True,
+                        ttl = 60
+                    )
                     
-                else: bt.logging.error('Failed to set weights.')    
+                    if result: 
+                        bt.logging.success('✅ Successfully set weights.')
+                        torch.save(scores, scores_file)
+                        bt.logging.info(f"Saved weights to \"{scores_file}\"")
+                        status['last_updated_block'] = current_block
+                        save_status()
+                        init_miner_status()
+                        break
+                        
+                    else: bt.logging.error('Failed to set weights.')
                 
             # Check for auto update
             if step % 5 == 0 and config.auto_update != "no":
