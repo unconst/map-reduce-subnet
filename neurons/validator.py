@@ -12,7 +12,7 @@ from dist_validator import start_master_process
 from threading import Thread
 import json
 from speedtest import verify_speedtest_result
-from datetime import datetime
+from datetime import datetime, timezone
 
 def get_validator_config_from_json():
     """
@@ -556,7 +556,7 @@ def main( config ):
         for response, (uid, axon) in zip(responses, axons_for_speedtest):
             if response.result is not None:
                 # Convert datetime object to Unix timestamp
-                date_time = datetime.fromisoformat(response.result['timestamp'].rstrip("Z"))
+                date_time = datetime.fromisoformat(response.result['timestamp'].rstrip("Z")).replace(tzinfo=timezone.utc)
                 timestamp = int(date_time.timestamp())
                 time.sleep(6)
                 
@@ -568,7 +568,7 @@ def main( config ):
                     continue
 
                 if abs(timestamp - verify_data['result']['date']) > 10:
-                    bt.logging.error(f"Miner {uid}: Timestamp mismatch {verify_data['result']['date']} {timestamp}")
+                    bt.logging.error(f"Miner {uid}: Timestamp mismatch {verify_data['result']['date']} {timestamp} ({response.result['timestamp']})")
                     continue
                 
                 if verify_data['result']['date'] < current_timestamp - 40:                    
