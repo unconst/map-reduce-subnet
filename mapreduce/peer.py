@@ -28,17 +28,20 @@ class Peer:
     port_range: Port range for gloo, should be allowed in firewall.
     benchmark_max_size: Maximum size of the benchmark in bytes.
     '''
-    def __init__(self, rank, peer_count, parser = argparse.ArgumentParser(), port_range = "9000:9010", bandwidth = 1e9, benchmark_max_size = 0):
+    def __init__(self, rank, peer_count, config = None, parser = argparse.ArgumentParser(), port_range = "9000:9010", bandwidth = 1e9, benchmark_max_size = 0):
         
         assert rank > 0, "Rank should not be zero"
-        parser.add_argument('--validator.uid', type = int, default= 0, help='Validator UID')
-        parser.add_argument('--netuid', type = int, default= 10, help='Subnet UID')
         
-        bt.subtensor.add_args(parser)
-        bt.logging.add_args(parser)
-        bt.wallet.add_args(parser)
-        bt.axon.add_args(parser)
-        config = bt.config(parser)
+        if config is None:
+            parser.add_argument ('--port.range', default = '9000:9010', help = "Opened Port range" )
+            parser.add_argument('--validator.uid', type = int, default= 0, help='Validator UID')
+            parser.add_argument('--netuid', type = int, default= 10, help='Subnet UID')
+            
+            bt.subtensor.add_args(parser)
+            bt.logging.add_args(parser)
+            bt.wallet.add_args(parser)
+            bt.axon.add_args(parser)
+            config = bt.config(parser)
 
         self.wallet = bt.wallet( config = config )
         self.subtensor = bt.subtensor( config = config )

@@ -12,39 +12,17 @@ benchmark_max_size = 50 * 1024 * 1024
 # Setting up the argument parser
 parser = ArgumentParser()
 
-parser.add_argument('--validator.uid', type = int, help='Validator UID')
-parser.add_argument('--netuid', type = int, default = 10, help = "The chain subnet uid." )
+parser.add_argument( '--auto_update', default = 'on', help = "Auto update" ) # major, minor, patch, no
 parser.add_argument ('--port.range', default = '9000:9010', help = "Opened Port range" )
-parser.add_argument( '--auto_update', default = 'patch', help = "Auto update" ) # major, minor, patch, no
+parser.add_argument('--validator.uid', type = int, default= 0, help='Validator UID')
+parser.add_argument('--netuid', type = int, default= 10, help='Subnet UID')
 
 bt.subtensor.add_args(parser)
 bt.logging.add_args(parser)
 bt.wallet.add_args(parser)
 bt.axon.add_args(parser)
-
-config = bt.config(
-    parser=parser
-)
-
-wallet = bt.wallet(config=config)
-dendrite = bt.dendrite(wallet=wallet) 
-validator_uid = config.validator.uid
-
-config.full_path = os.path.expanduser(
-        "{}/{}/{}/netuid{}/{}".format(
-            config.logging.logging_dir,
-            config.wallet.name,
-            config.wallet.hotkey,
-            config.netuid,
-            'benchmark',
-        )
-    )
-# Ensure the directory for logging exists, else create one.
-if not os.path.exists(config.full_path): os.makedirs(config.full_path, exist_ok=True)
-
-bt.logging(config=config, logging_dir=config.full_path)
-
-bt.logging.info(f"Configurations: {config}")
+config = bt.config(parser)
+            
 """
 Performs benchmarking operations for the given validator.
 
@@ -54,12 +32,12 @@ Args:
     netuid (int): Network unique identifier.
     network (str): Network information.
 """
-def benchmark(wallet, validator_uid, network ):
+def benchmark():
     bt.logging.info("")
     bt.logging.info(f"Starting benchmarking bot")
     
     # Initialize Peer instance
-    peer = Peer(1, 1, 0, wallet, validator_uid, network, port_range = config.port.range, benchmark_max_size = benchmark_max_size)
+    peer = Peer(1, 1, config = config, benchmark_max_size = benchmark_max_size)
 
     # Initialize process group with the fetched configuration
     if not peer.benchmark():
@@ -76,13 +54,13 @@ def main():
     
     while True: 
         # Check if there is a new version available
-        if config.auto_update != "no":
+        if config.auto_update != "off":
             if utils.update_repository():
                 bt.logging.success("🔁 Repository updated, exiting benchmark")
                 exit(0)
                 
         # Start the benchmarking process
-        p = mp.Process(target=benchmark, args=(wallet, validator_uid, config.subtensor.network))
+        p = mp.Process(target=benchmark)
         p.start()
         # Wait for the process to complete, with a specified timeout
         p.join(timeout=60)  # Set your desired timeout in seconds
