@@ -7,7 +7,7 @@ import time
 # speedtest using speedtest cli
 def speedtest():
     speedtest = pe.spawn('speedtest -f json', encoding='utf-8')
-    index = speedtest.expect(['{"type":"result".*', pe.EOF, pe.TIMEOUT], timeout=30)  # waiting 30 seconds for the prompt
+    index = speedtest.expect(['{"type":"result".*', pe.EOF, pe.TIMEOUT], timeout=60)  # waiting 60 seconds for the prompt
     if index > 0:
         print("Error", speedtest.before, speedtest.after)
         return None

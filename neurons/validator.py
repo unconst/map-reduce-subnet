@@ -550,7 +550,7 @@ def main( config ):
         bt.logging.info(f"🔵 UIDs for Speed Test: { [uid for uid, axon in axons_for_speedtest]}")
         if len(axons_for_speedtest) == 0:
             return
-        responses = dendrite.query([axon for uid, axon in axons_for_speedtest], protocol.SpeedTest(version = utils.get_my_version()), timeout = 40)
+        responses = dendrite.query([axon for uid, axon in axons_for_speedtest], protocol.SpeedTest(version = utils.get_my_version()), timeout = 70)
         bt.logging.success("Got speedtest results")
         current_timestamp = time.time()
         for response, (uid, axon) in zip(responses, axons_for_speedtest):
