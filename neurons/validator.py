@@ -301,6 +301,7 @@ def main( config ):
             return synapse
         else:
             bt.logging.info(f"Benchmarking Miner UID: {miner['uid']}, Tried: {miner.get('retry', 0)}")
+            miner['status'] = 'benchmarking'
         
         # Set miner_uid
         synapse.miner_uid = miner['uid']
@@ -783,7 +784,7 @@ def main( config ):
                             if miner['status'] == 'benchmarked':
                                 is_benchmarking = True
                                 break
-                        if not is_benchmarking:
+                        if not is_benchmarking and step > 50:
                             bt.logging.error("No miner is benchmarked, something wrong")
                             bt.logging.info("Restarting validator ...")
                             time.sleep(2)
