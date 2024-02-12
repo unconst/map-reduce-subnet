@@ -744,7 +744,7 @@ def main( config ):
             metagraph = subtensor.metagraph(config.netuid)
             
             bt.logging.info(f"Last benchmarked at: {last_benchmark_at}")
-            if last_benchmark_at > 0 and time.time() - last_benchmark_at > 300:
+            if last_benchmark_at > 0 and time.time() - last_benchmark_at > 3000:
                 bt.logging.error("No benchmark is happening. Restarting validator ...")
                 time.sleep(1)
                 os._exit(0)
@@ -862,5 +862,5 @@ def wait_for_master_process(hotkey, timeout=20):
 
 # This is the main function, which runs the miner.
 if __name__ == "__main__":
-    mp.set_start_method('spawn')  # This is often necessary in PyTorch multiprocessing
+    # mp.set_start_method('spawn')  # This is often necessary in PyTorch multiprocessing
     main( get_config() )
