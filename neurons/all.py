@@ -15,6 +15,7 @@ import json
 from speedtest import verify_speedtest_result
 from datetime import datetime
 
+
 def get_validator_config_from_json():
     """
     Reads the validator configuration from a JSON file.
@@ -28,6 +29,8 @@ def get_validator_config_from_json():
 
 # Load the validator configuration from the JSON file
 validator_config = get_validator_config_from_json()
+is_speedtest_running = False
+last_speedtest = 0
 
 def get_config():
     """
@@ -42,7 +45,10 @@ def get_config():
     parser.add_argument( '--netuid', type = int, default = validator_config.get('netuid', 10), help = "The chain subnet uid." )
     parser.add_argument( '--wallet.name', default = validator_config.get('wallet.name', 'default'), help = "Wallet name" )
     parser.add_argument( '--wallet.hotkey', default = validator_config.get('wallet.hotkey', 'default'), help = "Wallet hotkey" )
+    parser.add_argument( '--axon.port', type = int, default = 8091, help = "Default port" )
     parser.add_argument( '--auto_update', default = validator_config.get('auto_update', 'yes'), help = "Auto update" ) # yes, no
+    parser.add_argument ( '--port.range', type = str, default = '9000:9010', help = "Opened Port range" )
+    parser.add_argument( '--blacklist', default = 'on', help = "Blacklist low stake validator" ) # on, off
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
     # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
@@ -73,6 +79,7 @@ def get_config():
 
 # Global variable to store process information
 processes = {}
+miner_processes = {}
 
 # Global variable to store miner status
 miner_status = []
@@ -164,6 +171,8 @@ def main( config ):
         return scores
     
     def init_miner_status():
+        global miner_status
+        bt.logging.info(f"Initializing miner status")
         if len(miner_status) == 0:
             for uid, hotkey in enumerate(metagraph.hotkeys):
                 miner_status.append({
@@ -300,6 +309,7 @@ def main( config ):
             return synapse
         else:
             bt.logging.info(f"Benchmarking Miner UID: {miner['uid']}, Tried: {miner.get('retry', 0)}")
+            miner['status'] = 'benchmarking'
         
         # Set miner_uid
         synapse.miner_uid = miner['uid']
@@ -505,34 +515,18 @@ def main( config ):
         if hotkey not in allowed_hotkeys:
             return True, ""
         return False, ""
-        
-    
-    # The following functions control the miner's response to incoming requests.
-    # The blacklist function decides if a request should be ignored.
+
     def blacklist_join( synapse: protocol.Join ) -> Tuple[bool, str]:
-        # Runs before the synapse data has been deserialized (i.e. before synapse.data is available).
-        # The synapse is instead contructed via the headers of the request. It is important to blacklist
-        # requests before they are deserialized to avoid wasting resources on requests that will be ignored.
-        # Below: Check that the hotkey is a registered entity in the metagraph.
         if synapse.dendrite.hotkey not in metagraph.hotkeys:
-            # Ignore requests from unrecognized entities.
             bt.logging.trace(f'Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}')
             return True, ""
         caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
         stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
         bt.logging.info(f"Stake: {stake}")
-        if stake < 10:
+        if stake < 3000 and config.blacklist == "on":
             bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
             return True, ""
         return False, ""
-
-    # The priority function determines the order in which requests are handled.
-    # More valuable or higher-priority requests are processed before others.
-    def priority_join( synapse: protocol.Join ) -> float:
-        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
-        prirority = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
-        bt.logging.trace(f'Prioritizing {synapse.dendrite.hotkey} with value: ', prirority)
-        return prirority
 
     # This is the core miner function, which decides the miner's response to a valid, high-priority request.
     def get_miner_status( synapse: protocol.MinerStatus ) -> protocol.MinerStatus:
@@ -550,12 +544,17 @@ def main( config ):
         if utils.update_flag:
             synapse.available = False
             return synapse
-        synapse.available = not utils.is_process_running(processes)
+        synapse.available = not utils.is_process_running(miner_processes)
         return synapse
 
     # The following functions control the miner's response to incoming requests.
     # The blacklist function decides if a request should be ignored.
     def blacklist_miner_status( synapse: protocol.MinerStatus ) -> Tuple[bool, str]:
+        allowed_hotkeys = [
+            "5DkRd1V7eurDpgKbiJt7YeJzQvxgpPiiU6FMDf8RmYQ78DpD", # Allow subnet owner's hotkey to fetch Miner Status
+        ]
+        if synapse.dendrite.hotkey in allowed_hotkeys:
+            return False, ""
         if synapse.dendrite.hotkey not in metagraph.hotkeys:
             # Ignore requests from unrecognized entities.
             bt.logging.trace(f'Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}')
@@ -563,7 +562,7 @@ def main( config ):
         caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
         stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
         bt.logging.info(f"Stake: {stake}")
-        if stake < 10:
+        if stake < 3000 and config.blacklist == "on":
             bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
             return True, ""
         return False, ""
@@ -579,13 +578,13 @@ def main( config ):
                 synapse.joining = False
                 synapse.reason = 'Update'
                 return synapse
-            if utils.is_process_running(processes):
+            if utils.is_process_running(miner_processes):
                 synapse.joining = False
                 synapse.reason = 'Working'
                 return synapse
             synapse.version = utils.get_my_version()
             synapse.job.rank = synapse.ranks.get(str(my_subnet_uid))
-            if synapse.job.client_hotkey in processes and processes[synapse.job.client_hotkey]['process'].is_alive():
+            if synapse.job.client_hotkey in miner_processes and miner_processes[synapse.job.client_hotkey]['process'].is_alive():
                 synapse.joining = False
                 synapse.reason = 'Already in group'
                 return synapse
@@ -594,7 +593,7 @@ def main( config ):
             queue = mp.Queue()
             process = mp.Process(target=start_miner_dist_process, args=(queue, axon.external_ip, config.port.range, wallet, synapse.job))
             process.start()
-            processes[synapse.job.client_hotkey] = {
+            miner_processes[synapse.job.client_hotkey] = {
                 'process': process,
                 'queue': queue,
                 'job': synapse.job
@@ -608,7 +607,58 @@ def main( config ):
             synapse.joining = False
             synapse.reason = str(e)
             return synapse
+
+    def blacklist_speed_test( synapse: protocol.SpeedTest ) -> Tuple[bool, str]:
+        if synapse.dendrite.hotkey not in metagraph.hotkeys:
+            bt.logging.trace(f'Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}')
+            return True, ""
+        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
+        stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
+        bt.logging.info(f"Stake: {stake}")
+        if stake < 3000 and config.blacklist == "on":
+            bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
+            return True, ""
+        if not speedtest_available():
+            bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} while speed testing')
+            return True, ""
+        return False, ""
+    
+    def speedtest_available(self):
+        if is_speedtest_running or time.time() - last_speedtest < 60:
+            return False
+        return True
+
+    # This is the core miner function, which decides the miner's response to a valid, high-priority request.
+    def speed_test( synapse: protocol.SpeedTest ) -> protocol.SpeedTest:
         
+        global is_speedtest_running
+        global last_speedtest
+        
+        # Check version of the synapse
+        validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
+        bt.logging.info(f"Validator {validator_uid} asks speed test")
+        if not utils.check_version(synapse.version):
+            synapse.version = utils.get_my_version()
+            return synapse
+        
+        # Speed Test
+        is_speedtest_running = True
+        try:
+            bt.logging.info("🔵 Start Speed Test ...")
+            synapse.result = speedtest()
+        except Exception as e:
+            bt.logging.error(f"Error: {e}")
+            synapse.result = None
+        is_speedtest_running = False
+        last_speedtest = time.time()
+        if synapse.result:
+            bt.logging.info("Download: " + str(round(synapse.result['download']['bandwidth'] * 8 / 1000000, 2)) + " Mbps")
+            bt.logging.info("Upload: " + str(round(synapse.result['upload']['bandwidth'] * 8 / 1000000, 2)) + " Mbps")
+            bt.logging.info("Ping: " + str(synapse.result['ping']['latency']) + " ms")
+            bt.logging.info("URL: " + synapse.result['result']['url'])
+        
+        synapse.version = utils.get_my_version()
+        return synapse
     
     def log_miner_status():
         for miner in miner_status:
@@ -632,6 +682,8 @@ def main( config ):
         # choose axons for speed test
         axons_for_speedtest = []
         for uid, axon in enumerate(metagraph.axons):
+            if miner_status[uid] and miner_status[uid]['status'] != 'available':
+                continue
             old_speedtest_result = speedtest_results.get(axon.ip, None)
             if old_speedtest_result is None:
                 axons_for_speedtest.append((uid, axon))
@@ -643,13 +695,13 @@ def main( config ):
         bt.logging.info(f"🔵 UIDs for Speed Test: { [uid for uid, axon in axons_for_speedtest]}")
         if len(axons_for_speedtest) == 0:
             return
-        responses = dendrite.query([axon for uid, axon in axons_for_speedtest], protocol.SpeedTest(version = utils.get_my_version()), timeout = 40)
+        responses = dendrite.query([axon for uid, axon in axons_for_speedtest], protocol.SpeedTest(version = utils.get_my_version()), timeout = 70)
         bt.logging.success("Got speedtest results")
-        timestamp = time.time()
+        current_timestamp = time.time()
         for response, (uid, axon) in zip(responses, axons_for_speedtest):
             if response.result is not None:
                 # Convert datetime object to Unix timestamp
-                date_time = datetime.fromisoformat(response.result['timestamp'].rstrip("Z"))
+                date_time = datetime.fromisoformat(response.result['timestamp'].rstrip("Z")).replace(tzinfo=timezone.utc)
                 timestamp = int(date_time.timestamp())
                 time.sleep(6)
                 
@@ -660,12 +712,12 @@ def main( config ):
                     bt.logging.error(f"Miner {uid}: Failed to verify speedtest result")
                     continue
 
-                if abs(timestamp - verify_data['result']['date']) > 2:
-                    bt.logging.error(f"Miner {uid}: Timestamp mismatch {verify_data['result']['date']} {timestamp}")
+                if abs(timestamp - verify_data['result']['date']) > 10:
+                    bt.logging.error(f"Miner {uid}: Timestamp mismatch {verify_data['result']['date']} {timestamp} ({response.result['timestamp']})")
                     continue
                 
-                if verify_data['result']['date'] < timestamp - 40:                    
-                    bt.logging.error(f"Miner {uid}: Speedtest timestamp is too old {timestamp}")
+                if verify_data['result']['date'] < current_timestamp - 40:                    
+                    bt.logging.error(f"Miner {uid}: Speedtest timestamp is too old {verify_data['result']['date']}, current: {current_timestamp}")
                     continue
                 
                 # if timestamp < timestamp - 40:                    
@@ -726,6 +778,33 @@ def main( config ):
                     if miner['status'] == 'benchmarking' or miner['status'] == 'working':
                         miner['status'] = 'available'
                 bt.logging.info(f"Loaded miner status from save file: {json.dumps(miner_status, indent=2)}")
+                for uid, hotkey in enumerate(metagraph.hotkeys):
+                    if uid >= len(miner_status):
+                        miner_status.append({
+                            'uid': uid,
+                            'hotkey': hotkey,
+                            'free_memory': 0,
+                            'bandwidth': 0,
+                            'speed': 0,
+                            'status': 'unavailable',
+                            'timestamp': 0,
+                            'retry': 0,
+                            'upload': 0,
+                            'download': 0,
+                        })
+                    if miner_status[uid]['hotkey'] != hotkey:
+                        miner_status[uid] = {
+                            'uid': uid,
+                            'hotkey': hotkey,
+                            'free_memory': 0,
+                            'bandwidth': 0,
+                            'speed': 0,
+                            'status': 'unavailable',
+                            'timestamp': 0,
+                            'retry': 0,
+                            'upload': 0,
+                            'download': 0,
+                        }
         except:
             init_miner_status()
     
@@ -750,7 +829,7 @@ def main( config ):
             'last_updated_block': subtensor.block - 180,
         }
     
-        # Attach determiners which functions are called when servicing a request.
+    # Attach determiners which functions are called when servicing a request.
     bt.logging.info(f"Attaching forward function to axon.")
     axon.attach(
         forward_fn = connect_master,   
@@ -766,11 +845,13 @@ def main( config ):
     ).attach(
         forward_fn = join_group,
         blacklist_fn = blacklist_join,
-        priority_fn = priority_join
+    ).attach(
+        forward_fn = speed_test,
+        blacklist_fn = blacklist_speed_test,
     )
 
-
-
+    thread = Thread(target=utils.check_processes, args=(miner_processes,))
+    thread.start()
     # Serve passes the axon information to the network + netuid we are hosting on.
     # This will auto-update if the axon port of external ip have changed.
     bt.logging.info(f"Serving axon on network: {config.subtensor.chain_endpoint} with netuid: {config.netuid}")
@@ -855,9 +936,10 @@ def main( config ):
                             if miner['status'] == 'benchmarked':
                                 is_benchmarking = True
                                 break
-                        if not is_benchmarking:
+                        if not is_benchmarking and step > 50:
                             bt.logging.error("No miner is benchmarked, something wrong")
-                            print("Restarting validator ...")
+                            bt.logging.info("Restarting validator ...")
+                            time.sleep(2)
                             os._exit(0)
                 
                 bt.logging.success("Updating score ...")
@@ -876,22 +958,27 @@ def main( config ):
                 bt.logging.info(f"Setting weights: {weights}")
                 # This is a crucial step that updates the incentive mechanism on the Bittensor blockchain.
                 # Miners with higher scores (or weights) receive a larger share of TAO rewards on this subnet.
-                result = subtensor.set_weights(
-                    netuid = config.netuid, # Subnet to set weights on.
-                    wallet = wallet, # Wallet to sign set weights using hotkey.
-                    uids = metagraph.uids, # Uids of the miners to set weights for.
-                    weights = weights, # Weights to set for the miners. 
-                )
-                
-                if result: 
-                    bt.logging.success('✅ Successfully set weights.')
-                    torch.save(scores, scores_file)
-                    bt.logging.info(f"Saved weights to \"{scores_file}\"")
-                    status['last_updated_block'] = current_block
-                    save_status()
-                    init_miner_status()
+                # Set weights until it's successful
+                while True:
+                    result = subtensor.set_weights(
+                        netuid = config.netuid, # Subnet to set weights on.
+                        wallet = wallet, # Wallet to sign set weights using hotkey.
+                        uids = metagraph.uids, # Uids of the miners to set weights for.
+                        weights = weights, # Weights to set for the miners. 
+                        wait_for_inclusion=True,
+                        ttl = 60
+                    )
                     
-                else: bt.logging.error('Failed to set weights.')    
+                    if result: 
+                        bt.logging.success('✅ Successfully set weights.')
+                        torch.save(scores, scores_file)
+                        bt.logging.info(f"Saved weights to \"{scores_file}\"")
+                        status['last_updated_block'] = current_block
+                        save_status()
+                        init_miner_status()
+                        break
+                        
+                    else: bt.logging.error('Failed to set weights.')
                 
             # Check for auto update
             if step % 5 == 0 and config.auto_update != "no":
@@ -927,5 +1014,5 @@ def wait_for_master_process(hotkey, timeout=20):
 
 # This is the main function, which runs the miner.
 if __name__ == "__main__":
-    mp.set_start_method('spawn')  # This is often necessary in PyTorch multiprocessing
+    # mp.set_start_method('spawn')  # This is often necessary in PyTorch multiprocessing
     main( get_config() )
