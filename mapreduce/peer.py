@@ -117,7 +117,7 @@ class Peer:
             backend='gloo',
             rank=self.rank,
             world_size=self.world_size,
-            timeout=timedelta(seconds=10)
+            timeout=timedelta(seconds=60)
         )
         bt.logging.info('Initialized process group')
         self._init_groups()
@@ -126,11 +126,11 @@ class Peer:
         """
         Create groups
         """
-        self.peers = dist.new_group(ranks=list(range(1, self.peer_count + 1)), timeout=timedelta(seconds=10))
-        self.miners = dist.new_group(ranks=list(range(self.peer_count + 1, self.peer_count + self.peer_count + 1)), timeout=timedelta(seconds=10))
-        self.peer_miners = [dist.new_group(ranks=[peer_rank] + list(range(self.peer_count + 1, self.peer_count + self.peer_count + 1)), timeout=timedelta(seconds=10)) for peer_rank in range(1, self.peer_count + 1)]
-        self.miner_peers = [dist.new_group(ranks=[miner_rank] + list(range(1, self.peer_count + 1)), timeout=timedelta(seconds=10)) for miner_rank in range(self.peer_count + 1, self.peer_count + self.peer_count + 1)]
-        self.validator_rank1 = dist.new_group(ranks=(0, 1), timeout=timedelta(seconds=15))
+        self.peers = dist.new_group(ranks=list(range(1, self.peer_count + 1)), timeout=timedelta(seconds=60))
+        self.miners = dist.new_group(ranks=list(range(self.peer_count + 1, self.peer_count + self.peer_count + 1)), timeout=timedelta(seconds=60))
+        self.peer_miners = [dist.new_group(ranks=[peer_rank] + list(range(self.peer_count + 1, self.peer_count + self.peer_count + 1)), timeout=timedelta(seconds=60)) for peer_rank in range(1, self.peer_count + 1)]
+        self.miner_peers = [dist.new_group(ranks=[miner_rank] + list(range(1, self.peer_count + 1)), timeout=timedelta(seconds=60)) for miner_rank in range(self.peer_count + 1, self.peer_count + self.peer_count + 1)]
+        self.validator_rank1 = dist.new_group(ranks=(0, 1), timeout=timedelta(seconds=60))
         bt.logging.info('Groups created')
 
     def destroy_process_group(self):
@@ -322,7 +322,7 @@ class Peer:
             backend='gloo',
             rank=self.rank,
             world_size=self.world_size,
-            timeout=timedelta(seconds=10)
+            timeout=timedelta(seconds=60)
         )
         bt.logging.info('Initialized process group')
         self._init_groups()
