@@ -15,6 +15,8 @@ import json
 from speedtest import verify_speedtest_result
 from datetime import datetime, timezone
 from speedtest import speedtest as speedtest_miner
+from rich.table import Table
+from rich.console import Console
 
 
 def get_validator_config_from_json():
@@ -125,7 +127,6 @@ def main( config ):
 
     # metagraph provides the network's current state, holding state about other participants in a subnet.
     metagraph = subtensor.metagraph(config.netuid)
-    bt.logging.info(f"Metagraph: {metagraph} {metagraph.axons}")
     
     if wallet.hotkey.ss58_address not in metagraph.hotkeys:
         bt.logging.error(f"\nYour validator: {wallet} if not registered to chain connection: {subtensor} \nRun btcli register and try again. ")
@@ -151,7 +152,7 @@ def main( config ):
                 uid = miner['uid']
                 speedtest_scores[uid] = miner['upload'] * 0.5 + miner['download'] * 0.5
                 benchmark_scores[uid] = miner['speed']
-                bandwidth_scores[uid] = min(miner['free_memory'], 256 * 1024 * 1024 * 1024 )
+                bandwidth_scores[uid] = min(miner['free_memory'], 512 * 1024 * 1024 * 1024 )
                 ip = metagraph.neurons[uid].axon_info.ip
                 ip_count[ip] = ip_count.get(ip, 0) + 1
         
@@ -168,7 +169,7 @@ def main( config ):
         # set bandwidth score to 0 if speed score is 0
         bandwidth_scores = bandwidth_scores * torch.Tensor([benchmark_scores[uid] > 0 for uid in metagraph.uids])
         bandwidth_scores = torch.nn.functional.normalize(bandwidth_scores, p=1.0, dim=0)
-        scores = speedtest_scores * 0.7 + benchmark_scores * 0.05 + bandwidth_scores * 0.25
+        scores = speedtest_scores * 0.55 + benchmark_scores * 0.05 + bandwidth_scores * 0.4
         return scores
     
     def init_miner_status():
@@ -322,8 +323,8 @@ def main( config ):
             synapse.job.rank = 1
             synapse.job.world_size = 3
             if hotkey in processes and processes[hotkey]['process'].is_alive():
-                bt.logging.error(f'Master process running {synapse.miner_uid} {hotkey}')
-                traceback.print_exc()
+                bt.logging.warning(f'Master process running {synapse.miner_uid} {hotkey}')
+                bt.logging.trace(traceback.format_exc())
                 synapse.job.status = 'error'
                 synapse.job.reason = 'Master process running'
                 return synapse
@@ -662,21 +663,6 @@ def main( config ):
         
         synapse.version = utils.get_my_version()
         return synapse
-    
-    def log_miner_status():
-        for miner in miner_status:
-            color = '0' #green
-            if miner['status'] == 'benchmarked':
-                color = '92'
-            if miner['status'] == 'available' or miner['status'] == 'benchmarking' or miner['status'] == 'working':
-                color = '94'
-            if miner['status'] == 'failed':
-                color = '91'
-            if miner['status'] == 'unavailable':
-                bt.logging.info(f"Miner {miner['uid']} \033[{color}m{miner['status']}\033[0m")
-            else:
-                bt.logging.info(f"Miner {miner['uid']} \033[{color}m{miner['status']}\033[0m | \033[{color}m{scores[miner['uid']]}\033[0m | Speed: \033[{color}m{utils.human_readable_size(miner.get('speed', 0))}/s\033[0m | Bandwidth: \033[{color}m{utils.human_readable_size(utils.calc_bandwidth_from_memory(miner['free_memory']))}\033[0m | Free Memory: \033[{color}m{utils.human_readable_size(miner.get('free_memory', 0))}\033[0m {miner.get('retry', 0) > 0 and ('| Retry: ' + str(miner['retry'])) or ''}")
-        
 
     def speedtest():
         
@@ -772,6 +758,30 @@ def main( config ):
         with open('miner_status.json', 'w') as f:
             json.dump(miner_status, f, indent=2)
     
+    def print_miner_status():
+        table = Table(title="Miners")
+        table.add_column("uid", justify="right", style="cyan", no_wrap=True)
+        table.add_column("upload", style="magenta", min_width=7)
+        table.add_column("download", style="magenta", min_width=7)
+        table.add_column("speed", style="magenta")
+        table.add_column("memory", style="magenta")
+        table.add_column("try", style="magenta")
+        table.add_column("score", style="magenta")
+        table.add_column("status", style="magenta", no_wrap=True)
+        for miner in miner_status:
+            table.add_row(
+                str(miner['uid']),
+                f"{(miner['upload']) / 1024 / 1024:.2f}",
+                f"{(miner['download']) / 1024 / 1024:.2f}",
+                f"{(miner['speed']) / 1024 / 1024:.2f}",
+                f"{(miner['free_memory']) / 1024 / 1024 / 1024:.2f}",
+                f"{miner.get('retry', 0)}",
+                f"{miner.get('score', 0):.2f}",
+                status_with_color(miner['status'])
+            )
+        console = Console()
+        console.print(table)
+    
     def load_miner_status():
         global miner_status
         try:
@@ -780,7 +790,7 @@ def main( config ):
                 for miner in miner_status:
                     if miner['status'] == 'benchmarking' or miner['status'] == 'working':
                         miner['status'] = 'available'
-                bt.logging.info(f"Loaded miner status from save file: {json.dumps(miner_status, indent=2)}")
+                bt.logging.info(f"Loaded miner status from save file")
                 for uid, hotkey in enumerate(metagraph.hotkeys):
                     if uid >= len(miner_status):
                         miner_status.append({
@@ -808,8 +818,19 @@ def main( config ):
                             'upload': 0,
                             'download': 0,
                         }
+                print_miner_status()
         except:
             init_miner_status()
+    
+    def status_with_color(status):
+        icon = '⚫'
+        if status == 'benchmarked':
+            icon = '🟢'
+        if status == 'available' or status == 'benchmarking' or status == 'working':
+            icon = '🔵'
+        if status == 'failed':
+            icon = '🛑'
+        return f"{icon} {status}"
     
     # load speedtest results
     try:
@@ -906,19 +927,15 @@ def main( config ):
                 
             if step % 5 == 0:
                 update_miner_status()
-                for miner in miner_status:
-                    if miner['status'] == 'benchmarked':
-                        bt.logging.info(f"Miner {miner['uid']} | Speed: {utils.human_readable_size(miner['speed'])}/s | Bandwidth: {utils.human_readable_size(utils.calc_bandwidth_from_memory(miner['free_memory']))}")
-                # Speed Test                
+                print_miner_status()
+                # Speed Test
                 speedtest()
                 
-            if step % 20 == 0:
-                log_miner_status()
             # Periodically update the weights on the Bittensor blockchain.
             current_block = subtensor.block
             bt.logging.info(f"Last updated block: {status['last_updated_block']}, current block: {current_block}")
                 
-            if current_block - status['last_updated_block'] > 200:
+            if current_block - status['last_updated_block'] > 200 or (config.netuid == 32 and current_block - status['last_updated_block'] > 10):
                 
                 # Skip setting weight if there are miners benchmarking or not benchmarked yet
                 is_benchmarking = False
@@ -955,33 +972,45 @@ def main( config ):
                     miner_status[uid]['new_score'] = float(new_scores[uid])
                     miner_status[uid]['score'] = float(scores[uid])
                 
-                print(json.dumps(miner_status, indent=2))
+                print_miner_status()
                 
                 weights = torch.nn.functional.normalize(scores, p=1.0, dim=0)
-                bt.logging.info(f"Setting weights: {weights}")
+                
+                ( processed_uids, processed_weights,) = bt.utils.weight_utils.process_weights_for_netuid(
+                    uids=metagraph.uids,
+                    weights=weights,
+                    netuid = config.netuid,
+                    subtensor=subtensor
+                )
+                
+                table = Table(title="Weights")
+                table.add_column("uid", justify="right", style="cyan", no_wrap=True)
+                table.add_column("weight", style="magenta")
+                for index, weight in list(zip(processed_uids.tolist(), processed_weights.tolist())):
+                    table.add_row(str(index), str(round(weight, 4)))
+                console = Console()
+                console.print(table)
+                
                 # This is a crucial step that updates the incentive mechanism on the Bittensor blockchain.
                 # Miners with higher scores (or weights) receive a larger share of TAO rewards on this subnet.
-                # Set weights until it's successful
-                while True:
-                    result = subtensor.set_weights(
-                        netuid = config.netuid, # Subnet to set weights on.
-                        wallet = wallet, # Wallet to sign set weights using hotkey.
-                        uids = metagraph.uids, # Uids of the miners to set weights for.
-                        weights = weights, # Weights to set for the miners. 
-                        wait_for_inclusion=True,
-                        ttl = 60
-                    )
+                result = subtensor.set_weights(
+                    netuid = config.netuid, # Subnet to set weights on.
+                    wallet = wallet, # Wallet to sign set weights using hotkey.
+                    uids = processed_uids, # Uids of the miners to set weights for.
+                    weights = processed_weights, # Weights to set for the miners. 
+                    wait_for_inclusion=True,
+                    ttl = 60
+                )
+                
+                if result: 
+                    bt.logging.success('✅ Successfully set weights.')
+                    torch.save(scores, scores_file)
+                    bt.logging.info(f"Saved weights to \"{scores_file}\"")
+                    status['last_updated_block'] = current_block
+                    save_status()
+                    init_miner_status()
                     
-                    if result: 
-                        bt.logging.success('✅ Successfully set weights.')
-                        torch.save(scores, scores_file)
-                        bt.logging.info(f"Saved weights to \"{scores_file}\"")
-                        status['last_updated_block'] = current_block
-                        save_status()
-                        init_miner_status()
-                        break
-                        
-                    else: bt.logging.error('Failed to set weights.')
+                else: bt.logging.error('Failed to set weights.')
                 
             # Check for auto update
             if step % 5 == 0 and config.auto_update != "no":
