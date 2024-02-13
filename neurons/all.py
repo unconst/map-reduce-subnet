@@ -14,6 +14,7 @@ from threading import Thread
 import json
 from speedtest import verify_speedtest_result
 from datetime import datetime, timezone
+from speedtest import speedtest as speedtest_miner
 
 
 def get_validator_config_from_json():
@@ -645,7 +646,7 @@ def main( config ):
         is_speedtest_running = True
         try:
             bt.logging.info("🔵 Start Speed Test ...")
-            synapse.result = speedtest()
+            synapse.result = speedtest_miner()
         except Exception as e:
             bt.logging.error(f"Error: {e}")
             synapse.result = None
