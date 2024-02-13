@@ -205,11 +205,11 @@ class Validator:
                 dist.destroy_process_group()
                 break
 
-def timeout_handler():
+def timeout_handler(signum, frame):
     """
     Handler for the alarm signal.
     """
-    bt.logging.error("Session Timeout")
+    bt.logging.warning("Session Timeout")
     raise Exception("Timeout")
 
 # Start the master process for the Validator.
@@ -234,5 +234,7 @@ def start_master_process(input_queue: mp.Queue, output_queue: mp.Queue, wallet: 
     try:
         validator.start_master()
     except Exception as e:
-        bt.logging.info(f"❌ {e}")
-        traceback.print_exc()
+        bt.logging.warning(f"🛑 {e}")
+        bt.logging.trace(traceback.format_exc())
+    # Cancel the alarm if the operation completes in time
+    signal.alarm(0)
