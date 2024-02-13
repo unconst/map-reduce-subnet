@@ -176,7 +176,8 @@ def check_processes(processes, miner_status = None):
     while True:
         try:
             keys_to_delete = []
-            for key in processes:
+            all_keys = list(processes.keys())
+            for key in all_keys:
                 process = processes[key]['process']
                 if not process.is_alive():
                     keys_to_delete.append(key)
@@ -201,8 +202,8 @@ def check_processes(processes, miner_status = None):
                     bt.logging.warning("\033[93m🔁 Force exiting process for update.\033[0m")
                     os._exit(0)
         except Exception as e:
-            bt.logging.error(f"Error checking processes: {e}")
-            traceback.print_exc()
+            bt.logging.warning(f"Error checking processes: {e}")
+            bt.logging.trace(traceback.format_exc())
         time.sleep(0.005)
         
 """
