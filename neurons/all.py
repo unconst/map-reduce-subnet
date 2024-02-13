@@ -623,7 +623,7 @@ def main( config ):
             return True, ""
         return False, ""
     
-    def speedtest_available(self):
+    def speedtest_available():
         if is_speedtest_running or time.time() - last_speedtest < 60:
             return False
         return True
