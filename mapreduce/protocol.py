@@ -50,7 +50,7 @@ class Job (pydantic.BaseModel):
     verifier_count: Optional[int] = None
     bandwidth: Optional[int] = None
     started_at: Optional[int] = None
-    session_time: Optional[int] = 900
+    session_time: Optional[int] = 300
     status: Optional[str] = None
     reason: Optional[str] = None
 

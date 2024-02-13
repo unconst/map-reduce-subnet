@@ -250,12 +250,14 @@ def main( config ):
         start_at = time.time()
         while True:
             if hotkey not in processes or not processes[hotkey]['process'].is_alive():
-                bt.logging.info(f"❌ Master process died")
+                bt.logging.warning(f"🛑 Benchmark failed {miner_uid}")
+                miner_status[miner_uid]['status'] = 'available'
                 return
             if processes[hotkey]['output_queue'].empty():
                 time.sleep(1)
                 if time.time() - start_at > 60:
-                    bt.logging.error(f'Timeout while waiting for benchmark result {miner_uid}, exiting ...')
+                    bt.logging.warning(f'🛑 Timeout for benchmark result {miner_uid}')
+                    miner_status[miner_uid]['status'] = 'available'
                     break
                 continue
             result:protocol.BenchmarkResult = processes[hotkey]['output_queue'].get()
@@ -372,7 +374,7 @@ def main( config ):
             return synapse
         except Exception as e:
             # if failed, set joining to false
-            bt.logging.error(f"❌ {e}")
+            bt.logging.error(f"🛑 {e}")
             traceback.print_exc()
             synapse.job.reason = str(e)
             del processes[hotkey]
@@ -457,7 +459,7 @@ def main( config ):
             return synapse
         except Exception as e:
             # if failed, set joining to false
-            bt.logging.info(f"❌ {e}")
+            bt.logging.info(f"🛑 {e}")
             traceback.print_exc()
             if hotkey in processes and processes[hotkey]['job']:
                 for uid in processes[hotkey]['job'].miners:
@@ -603,8 +605,8 @@ def main( config ):
             return synapse
         except Exception as e:
             # if failed, set joining to false
-            bt.logging.info(f"❌ Error {e}")
-            traceback.print_exc()
+            bt.logging.warning(f"🛑 Error {e}")
+            bt.logging.trace(traceback.format_exc())
             synapse.joining = False
             synapse.reason = str(e)
             return synapse
