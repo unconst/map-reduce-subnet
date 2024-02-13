@@ -64,8 +64,8 @@ class Validator:
             # Start monitoring peers
             self.monitor_actions()
         except Exception as e:
-            bt.logging.error(f"❌ {e}")
-            traceback.print_exc()
+            bt.logging.warning(f"🛑 {e}")
+            bt.logging.trace(traceback.format_exc())
             if not job_sent:
                 self.job.status = 'error'
                 self.job.reason = str(e)
