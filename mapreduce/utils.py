@@ -181,11 +181,7 @@ def check_processes(processes, miner_status = None):
                 if not process.is_alive():
                     keys_to_delete.append(key)
             for key in keys_to_delete:
-                bt.logging.info(f"🚩 Delete Process with key: {key}")
-                if miner_status and processes[key].get('benchmarking', False):
-                    miner_uid = int(processes[key]['miners'][0][0])
-                    if miner_status[miner_uid]['status'] == 'benchmarking':
-                        miner_status[miner_uid]['status'] = 'unavailable'
+                bt.logging.info(f"🚩 Delete Process: {key}")
                 if 'miners' in processes[key]:
                     for (uid, _) in processes[key]['miners']:
                         if miner_status[int(uid)]['status'] == 'working':
@@ -207,7 +203,7 @@ def check_processes(processes, miner_status = None):
         except Exception as e:
             bt.logging.error(f"Error checking processes: {e}")
             traceback.print_exc()
-        time.sleep(0.1)
+        time.sleep(0.005)
         
 """
 Checks if any process in the given dictionary is still alive.
