@@ -92,9 +92,6 @@ speedtest_results = {}
 
 # Global variable to last benchmark time
 last_benchmark_at = 0
-
-# Global variable to store validator status
-status = {}
     
 # Main takes the config and starts the validator.
 def main( config ):
@@ -200,17 +197,11 @@ def main( config ):
                     miner_status[uid]['bandwidth_updated_at'] = 0
                 miner_status[uid]['retry'] = 0
         save_miner_status()
-    
-    def clear_benchmark_processes():
-        for hotkey in processes:
-            if processes[hotkey].get('benchmarking', False):
-                processes[hotkey]['process'].terminate()
-                del processes[hotkey]
         
     # Choose miner to benchmark
     def choose_miner():
         for miner in miner_status:
-            if miner['status'] == 'available' and miner['retry'] >= 2:
+            if miner['status'] == 'available' and miner['retry'] >= 3:
                 miner['status'] = 'failed'
         available_miners = [miner for miner in miner_status if miner['status'] == 'available']
         if len(available_miners) == 0:
@@ -246,41 +237,49 @@ def main( config ):
                 miner['free_memory'] = response.free_memory
         bt.logging.info(f"available miners to benchmark: {[miner['uid'] for miner in miner_status if miner['status'] == 'available']}")
     
-    def wait_for_benchmark_result(hotkey, miner_uid):
-        bt.logging.info(f"⌛ Waiting for benchmark result {miner_uid} {hotkey}")
-        start_at = time.time()
+    def check_benchmark_result():
         while True:
-            if hotkey not in processes or not processes[hotkey]['process'].is_alive():
-                bt.logging.warning(f"🛑 Benchmark failed {miner_uid}")
-                miner_status[miner_uid]['status'] = 'available'
-                return
-            if processes[hotkey]['output_queue'].empty():
-                time.sleep(1)
-                if time.time() - start_at > 60:
+            benchmarking_uids = [miner['uid'] for miner in miner_status if miner['status'] == 'benchmarking']
+            for miner_uid in benchmarking_uids:
+                miner = miner_status[miner_uid]
+                if time.time() - miner['timestamp'] > 32:
                     bt.logging.warning(f'🛑 Timeout for benchmark result {miner_uid}')
-                    miner_status[miner_uid]['status'] = 'available'
-                    break
-                continue
-            result:protocol.BenchmarkResult = processes[hotkey]['output_queue'].get()
-            log =  (f'🟢 Benchmark Result | UID: {miner_uid} | '\
-                    f'Duration: {result.duration:.2f}s | '\
-                    f'Data: {utils.human_readable_size(result.data_length)} | '\
-                    f'Bandwidth: {utils.human_readable_size(result.bandwidth)} | '\
-                    f'Speed: {utils.human_readable_size(result.speed)}/s | '\
-            )
-            bt.logging.success(log)
-            bt.logging.info(f"Benchmarked miners: { len([miner for miner in miner_status if miner['status'] == 'benchmarked'])}")
-            if result.bandwidth == 50 * 1024 * 1024: # 50 MB for speed test
-                miner_status[miner_uid]['status'] = 'speed_tested'
-            else:
-                miner_status[miner_uid]['status'] = 'benchmarked'
-            miner_status[miner_uid]['speed'] = result.speed
-            miner_status[miner_uid]['timestamp'] = time.time()
-            miner_status[miner_uid]['bandwidth'] = result.bandwidth
-            miner_status[miner_uid]['bandwidth_updated_at'] = time.time()
-            processes[hotkey]['input_queue'].put('exit')
-            save_miner_status()
-            break
+                    miner['status'] = 'available'
+                    del miner['process']
+                    del miner['output']
+                    del miner['input']
+                if miner.get('process', None) is None:
+                    continue
+                if not miner['process'].is_alive():
+                    bt.logging.warning(f"🛑 Benchmark process off {miner_uid}")
+                    miner['status'] = 'available'
+                    del miner['process']
+                    del miner['output']
+                    del miner['input']
+                    continue
+                if miner['output'].empty():
+                    continue
+                result:protocol.BenchmarkResult = miner['output'].get()
+                log =  (f'🟢 Benchmark Result | UID: {miner_uid} | '\
+                        f'Duration: {result.duration:.2f}s | '\
+                        f'Data: {utils.human_readable_size(result.data_length)} | '\
+                        f'Bandwidth: {utils.human_readable_size(result.bandwidth)} | '\
+                        f'Speed: {utils.human_readable_size(result.speed)}/s | '\
+                )
+                bt.logging.success(log)
+                bt.logging.info(f"Benchmarked miners: { len([miner for miner in miner_status if miner['status'] == 'benchmarked'])}")
+                miner['status'] = 'benchmarked'
+                miner['speed'] = result.speed
+                miner['timestamp'] = time.time()
+                miner['bandwidth'] = result.bandwidth
+                miner['bandwidth_updated_at'] = time.time()
+                miner['input'].put('exit')
+                del miner['input']
+                del miner['output']
+                del miner['process']
+                save_miner_status()
+                
+            time.sleep(0.001)
     
     """
     Process benchmark request
@@ -313,7 +312,9 @@ def main( config ):
             return synapse
         else:
             bt.logging.info(f"Benchmarking Miner UID: {miner['uid']}, Tried: {miner.get('retry', 0)}")
-            miner['status'] = 'benchmarking'
+        
+        miner['status'] = 'benchmarking'
+        miner['timestamp'] = time.time()
         
         # Set miner_uid
         synapse.miner_uid = miner['uid']
@@ -333,7 +334,7 @@ def main( config ):
             synapse.job.client_hotkey = hotkey
             synapse.job.master_addr = axon.external_ip
             synapse.job.master_port = utils.get_unused_port(9000, 9300)
-            synapse.job.session_time = 60
+            synapse.job.session_time = 30
             miner_bandwidth = miner.get('bandwidth', 0)
             current_bandwidth = utils.calc_bandwidth_from_memory(miner.get('free_memory',0))
             # If the miner got bandwidth benchmark already, use 100 MB bandwidth for benchmarking
@@ -341,7 +342,7 @@ def main( config ):
             # if miner_bandwidth > 0:
             #     if (time.time() - miner.get('bandwidth_updated_at', 0) < 6 * 3600) and miner_bandwidth == validator_config["max_bandwidth"] or current_bandwidth > miner_bandwidth:
             #         synapse.job.bandwidth = 100 * 1024 * 1024
-            synapse.job.bandwidth = 10 * 1024 * 1024 # 10 MB
+            synapse.job.bandwidth = 500 * 1024 * 1024 # 10 MB
             
             bt.logging.info("⌛ Starting benchmarking process")
             bt.logging.trace(synapse.job)
@@ -365,13 +366,15 @@ def main( config ):
                 'benchmarking': True,
                 'miners': miners
             }
+            miner['process'] = process
+            miner['input'] = input_queue
+            miner['output'] = output_queue
+            
             synapse.job = processes[hotkey]['job']
             synapse.job.rank = 1
             bt.logging.trace(synapse.job)
             miner['retry'] = miner.get('retry', 0) + 1
             # create thread for waiting benchmark result
-            thread = Thread(target=wait_for_benchmark_result, args=(hotkey, synapse.miner_uid, ))
-            thread.start()
             return synapse
         except Exception as e:
             # if failed, set joining to false
@@ -747,16 +750,11 @@ def main( config ):
         save_miner_status()
         bt.logging.success("✅ Speedtest completed")
     
-    # Save Validator Status
-    def save_status():
-        global status
-        with open('status.json', 'w') as f:
-            json.dump(status, f, indent=2)
-    
     def save_miner_status():
         global miner_status
+        json_data = [miner if miner['status'] != 'benchmarking' else {k: v for k, v in miner.items() if k not in ['process', 'output', 'input']} for miner in miner_status]
         with open('miner_status.json', 'w') as f:
-            json.dump(miner_status, f, indent=2)
+            json.dump(json_data, f, indent=2)
     
     def print_miner_status():
         table = Table(title="Miners")
@@ -771,12 +769,12 @@ def main( config ):
         for miner in miner_status:
             table.add_row(
                 str(miner['uid']),
-                f"{(miner['upload']) / 1024 / 1024:.2f}",
-                f"{(miner['download']) / 1024 / 1024:.2f}",
+                f"{(miner['upload']) / 1000:.2f}",
+                f"{(miner['download']) / 1000:.2f}",
                 f"{(miner['speed']) / 1024 / 1024:.2f}",
                 f"{(miner['free_memory']) / 1024 / 1024 / 1024:.2f}",
                 f"{miner.get('retry', 0)}",
-                f"{miner.get('score', 0):.2f}",
+                f"{miner.get('score', 0) * 100:.2f}",
                 status_with_color(miner['status'])
             )
         console = Console()
@@ -843,16 +841,6 @@ def main( config ):
     # load miner status
     load_miner_status()
  
-    # load validator status
-    try:
-        with open('status.json') as f:
-            status = json.load(f)
-            bt.logging.info(f"Loaded status from save file: {json.dumps(status, indent=2)}")
-    except:
-        status = {
-            'last_updated_block': subtensor.block - 180,
-        }
-    
     # Attach determiners which functions are called when servicing a request.
     bt.logging.info(f"Attaching forward function to axon.")
     axon.attach(
@@ -888,6 +876,10 @@ def main( config ):
     # Check processes
     thread = Thread(target=utils.check_processes, args=(processes, miner_status))
     thread.start()
+    
+    # Check benchmark processes
+    benchmark_thread = Thread(target=check_benchmark_result)
+    benchmark_thread.start()
 
     # Step 6: Keep the validator alive
     # This loop maintains the validator's operations until intentionally stopped.
@@ -918,7 +910,7 @@ def main( config ):
         try:
             # Below: Periodically update our knowledge of the network graph.
             metagraph = subtensor.metagraph(config.netuid)
-            
+            last_updated_block = metagraph.last_update[my_subnet_uid].item()
             bt.logging.info(f"Last benchmarked at: {last_benchmark_at}")
             if last_benchmark_at > 0 and time.time() - last_benchmark_at > 300:
                 bt.logging.error("No benchmark is happening. Restarting validator ...")
@@ -933,9 +925,9 @@ def main( config ):
                 
             # Periodically update the weights on the Bittensor blockchain.
             current_block = subtensor.block
-            bt.logging.info(f"Last updated block: {status['last_updated_block']}, current block: {current_block}")
+            bt.logging.info(f"Last updated block: {last_updated_block}, current block: {current_block}")
                 
-            if current_block - status['last_updated_block'] > 200 or (config.netuid == 32 and current_block - status['last_updated_block'] > 10):
+            if current_block - last_updated_block > 200 or (config.netuid == 32 and current_block - last_updated_block > 10):
                 
                 # Skip setting weight if there are miners benchmarking or not benchmarked yet
                 is_benchmarking = False
@@ -946,7 +938,7 @@ def main( config ):
                         break
                         
                 if is_benchmarking:
-                    if current_block - status['last_updated_block'] < 400:
+                    if current_block - last_updated_block < 400:
                         step += 1
                         time.sleep(bt.__blocktime__)
                         continue
@@ -1006,8 +998,7 @@ def main( config ):
                     bt.logging.success('✅ Successfully set weights.')
                     torch.save(scores, scores_file)
                     bt.logging.info(f"Saved weights to \"{scores_file}\"")
-                    status['last_updated_block'] = current_block
-                    save_status()
+                    last_updated_block = current_block
                     init_miner_status()
                     
                 else: bt.logging.error('Failed to set weights.')
