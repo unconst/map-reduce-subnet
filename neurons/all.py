@@ -237,6 +237,13 @@ def main( config ):
                 miner['free_memory'] = response.free_memory
         bt.logging.info(f"available miners to benchmark: {[miner['uid'] for miner in miner_status if miner['status'] == 'available']}")
     
+    def clear_miner_process(miner):
+        if miner.get('process', None) is None:
+            return
+        del miner['process']
+        del miner['output']
+        del miner['input']
+    
     def check_benchmark_result():
         while True:
             benchmarking_uids = [miner['uid'] for miner in miner_status if miner['status'] == 'benchmarking']
@@ -244,18 +251,14 @@ def main( config ):
                 miner = miner_status[miner_uid]
                 if time.time() - miner['timestamp'] > 32:
                     bt.logging.warning(f'🛑 Timeout for benchmark result {miner_uid}')
+                    clear_miner_process(miner)
                     miner['status'] = 'available'
-                    del miner['process']
-                    del miner['output']
-                    del miner['input']
                 if miner.get('process', None) is None:
                     continue
                 if not miner['process'].is_alive():
                     bt.logging.warning(f"🛑 Benchmark process off {miner_uid}")
                     miner['status'] = 'available'
-                    del miner['process']
-                    del miner['output']
-                    del miner['input']
+                    clear_miner_process(miner)
                     continue
                 if miner['output'].empty():
                     continue
@@ -268,15 +271,13 @@ def main( config ):
                 )
                 bt.logging.success(log)
                 bt.logging.info(f"Benchmarked miners: { len([miner for miner in miner_status if miner['status'] == 'benchmarked'])}")
+                miner['input'].put('exit')
+                clear_miner_process(miner)
                 miner['status'] = 'benchmarked'
                 miner['speed'] = result.speed
                 miner['timestamp'] = time.time()
                 miner['bandwidth'] = result.bandwidth
                 miner['bandwidth_updated_at'] = time.time()
-                miner['input'].put('exit')
-                del miner['input']
-                del miner['output']
-                del miner['process']
                 save_miner_status()
                 
             time.sleep(0.001)
@@ -463,8 +464,8 @@ def main( config ):
             return synapse
         except Exception as e:
             # if failed, set joining to false
-            bt.logging.info(f"🛑 {e}")
-            traceback.print_exc()
+            bt.logging.warning(f"🛑 {e}")
+            bt.logging.trace(traceback.format_exc())
             if hotkey in processes and processes[hotkey]['job']:
                 for uid in processes[hotkey]['job'].miners:
                     miner_status[uid]['status'] = 'available'
