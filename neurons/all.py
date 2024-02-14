@@ -342,7 +342,7 @@ def main( config ):
             # if miner_bandwidth > 0:
             #     if (time.time() - miner.get('bandwidth_updated_at', 0) < 6 * 3600) and miner_bandwidth == validator_config["max_bandwidth"] or current_bandwidth > miner_bandwidth:
             #         synapse.job.bandwidth = 100 * 1024 * 1024
-            synapse.job.bandwidth = 500 * 1024 * 1024 # 10 MB
+            synapse.job.bandwidth = 5 * 1024 * 1024 # 5 MB
             
             bt.logging.info("⌛ Starting benchmarking process")
             bt.logging.trace(synapse.job)
