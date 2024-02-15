@@ -916,6 +916,7 @@ def main( config ):
             if last_benchmark_at > 0 and time.time() - last_benchmark_at > 300:
                 bt.logging.error("No benchmark is happening. Restarting validator ...")
                 time.sleep(1)
+                axon.stop()
                 os._exit(0)
                 
             if step % 5 == 0:
@@ -953,6 +954,7 @@ def main( config ):
                             bt.logging.error("No miner is benchmarked, something wrong")
                             bt.logging.info("Restarting validator ...")
                             time.sleep(2)
+                            axon.stop()
                             os._exit(0)
                 
                 bt.logging.success("Updating score ...")
@@ -1008,11 +1010,6 @@ def main( config ):
             if step % 5 == 0 and config.auto_update != "no":
                 utils.update_repository()
             
-            # Check if axon is running
-            if not axon.fast_server.is_running:
-                bt.logging.error("Axon is not running, restarting validator ...")
-                break
-            
             step += 1
             time.sleep(bt.__blocktime__)
 
@@ -1026,6 +1023,7 @@ def main( config ):
         except Exception as e:
             bt.logging.error(traceback.format_exc())
             continue
+    
 
 def wait_for_master_process(hotkey, timeout=20):
     start_time = time.time()
