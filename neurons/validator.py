@@ -331,13 +331,6 @@ def main( config ):
             synapse.job.master_addr = axon.external_ip
             synapse.job.master_port = utils.get_unused_port(9000, 9300)
             synapse.job.session_time = 30
-            miner_bandwidth = miner.get('bandwidth', 0)
-            current_bandwidth = utils.calc_bandwidth_from_memory(miner.get('free_memory',0))
-            # If the miner got bandwidth benchmark already, use 100 MB bandwidth for benchmarking
-            # Bandwidth are benchmarked every 6 hours
-            # if miner_bandwidth > 0:
-            #     if (time.time() - miner.get('bandwidth_updated_at', 0) < 6 * 3600) and miner_bandwidth == validator_config["max_bandwidth"] or current_bandwidth > miner_bandwidth:
-            #         synapse.job.bandwidth = 100 * 1024 * 1024
             synapse.job.bandwidth = 5 * 1024 * 1024 # 5 MB
             
             bt.logging.info("⌛ Starting benchmarking process")
@@ -482,19 +475,6 @@ def main( config ):
             bt.logging.error(f"Benchmark Results: Version mismatch {synapse.version}")
             return synapse
         bt.logging.info(f"benchmark results: {synapse}")
-        # Check if the master process is running
-        # Get the result from the master process
-        # synapse.results = [ {
-        #     "duration" : miner['duration'],
-        #     "data_length" : miner['data_length'],
-        #     "bandwidth" : miner['bandwidth'],
-        #     "speed" : miner['speed'],
-        #     "free_memory" : miner['free_memory'],
-        #     "upload" : miner['upload'],
-        #     "download" : miner['download']
-        # } for miner in miner_status ]0
-        
-        # synapse.results = miner_status
         synapse.results = []
         for miner in miner_status:
             synapse.results.append({
@@ -516,18 +496,6 @@ def main( config ):
         ]
         # Check if the hotkey is allowed list
         if hotkey not in allowed_hotkeys:
-            return True, ""
-        return False, ""
-
-    def blacklist_join( synapse: protocol.Join ) -> Tuple[bool, str]:
-        if synapse.dendrite.hotkey not in metagraph.hotkeys:
-            bt.logging.trace(f'Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}')
-            return True, ""
-        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
-        stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
-        bt.logging.info(f"Stake: {stake}")
-        if stake < 3000 and config.blacklist == "on":
-            bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
             return True, ""
         return False, ""
 
@@ -778,6 +746,7 @@ def main( config ):
             if last_benchmark_at > 0 and time.time() - last_benchmark_at > 300:
                 bt.logging.error("No benchmark is happening. Restarting validator ...")
                 time.sleep(1)
+                axon.stop()
                 os._exit(0)
                 
             if step % 5 == 0:
@@ -815,6 +784,7 @@ def main( config ):
                             bt.logging.error("No miner is benchmarked, something wrong")
                             bt.logging.info("Restarting validator ...")
                             time.sleep(2)
+                            axon.stop()
                             os._exit(0)
                 
                 bt.logging.success("Updating score ...")
