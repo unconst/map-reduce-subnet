@@ -753,7 +753,7 @@ def main( config ):
     
     def save_miner_status():
         global miner_status
-        json_data = [miner if miner['status'] != 'benchmarking' else {k: v for k, v in miner.items() if k not in ['process', 'output', 'input']} for miner in miner_status]
+        json_data = [{k: v for k, v in miner.items() if k not in ['process', 'output', 'input']} for miner in miner_status]
         with open('miner_status.json', 'w') as f:
             json.dump(json_data, f, indent=2)
     

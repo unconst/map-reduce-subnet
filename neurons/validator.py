@@ -592,7 +592,7 @@ def main( config ):
     
     def save_miner_status():
         global miner_status
-        json_data = [miner if miner['status'] != 'benchmarking' else {k: v for k, v in miner.items() if k not in ['process', 'output', 'input']} for miner in miner_status]
+        json_data = [{k: v for k, v in miner.items() if k not in ['process', 'output', 'input']} for miner in miner_status]
         with open('miner_status.json', 'w') as f:
             json.dump(json_data, f, indent=2)
     
@@ -839,11 +839,6 @@ def main( config ):
             # Check for auto update
             if step % 5 == 0 and config.auto_update != "no":
                 utils.update_repository()
-            
-            # Check if axon is running
-            if not axon.fast_server.is_running:
-                bt.logging.error("Axon is not running, restarting validator ...")
-                break
             
             step += 1
             time.sleep(bt.__blocktime__)
