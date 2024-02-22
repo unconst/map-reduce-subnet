@@ -9,10 +9,12 @@ import torch
 from typing import Tuple
 from mapreduce import utils, protocol
 from dist_validator import start_master_process
+from dist_miner import start_miner_dist_process
 from threading import Thread
 import json
 from speedtest import verify_speedtest_result
 from datetime import datetime, timezone
+from speedtest import speedtest as speedtest_miner
 from rich.table import Table
 from rich.console import Console
 
@@ -48,6 +50,8 @@ def get_config():
     parser.add_argument( '--wallet.hotkey', default = validator_config.get('wallet.hotkey', 'default'), help = "Wallet hotkey" )
     parser.add_argument( '--axon.port', type = int, default = 8091, help = "Default port" )
     parser.add_argument( '--auto_update', default = validator_config.get('auto_update', 'yes'), help = "Auto update" ) # yes, no
+    parser.add_argument ( '--port.range', type = str, default = '9000:9010', help = "Opened Port range" )
+    parser.add_argument( '--blacklist', default = 'on', help = "Blacklist low stake validator" ) # on, off
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
     # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
@@ -78,6 +82,7 @@ def get_config():
 
 # Global variable to store process information
 processes = {}
+miner_processes = {}
 
 # Global variable to store miner status
 miner_status = []
@@ -331,6 +336,13 @@ def main( config ):
             synapse.job.master_addr = axon.external_ip
             synapse.job.master_port = utils.get_unused_port(9000, 9300)
             synapse.job.session_time = 30
+            miner_bandwidth = miner.get('bandwidth', 0)
+            current_bandwidth = utils.calc_bandwidth_from_memory(miner.get('free_memory',0))
+            # If the miner got bandwidth benchmark already, use 100 MB bandwidth for benchmarking
+            # Bandwidth are benchmarked every 6 hours
+            # if miner_bandwidth > 0:
+            #     if (time.time() - miner.get('bandwidth_updated_at', 0) < 6 * 3600) and miner_bandwidth == validator_config["max_bandwidth"] or current_bandwidth > miner_bandwidth:
+            #         synapse.job.bandwidth = 100 * 1024 * 1024
             synapse.job.bandwidth = 5 * 1024 * 1024 # 5 MB
             
             bt.logging.info("⌛ Starting benchmarking process")
@@ -475,6 +487,19 @@ def main( config ):
             bt.logging.error(f"Benchmark Results: Version mismatch {synapse.version}")
             return synapse
         bt.logging.info(f"benchmark results: {synapse}")
+        # Check if the master process is running
+        # Get the result from the master process
+        # synapse.results = [ {
+        #     "duration" : miner['duration'],
+        #     "data_length" : miner['data_length'],
+        #     "bandwidth" : miner['bandwidth'],
+        #     "speed" : miner['speed'],
+        #     "free_memory" : miner['free_memory'],
+        #     "upload" : miner['upload'],
+        #     "download" : miner['download']
+        # } for miner in miner_status ]0
+        
+        # synapse.results = miner_status
         synapse.results = []
         for miner in miner_status:
             synapse.results.append({
@@ -499,12 +524,148 @@ def main( config ):
             return True, ""
         return False, ""
 
+    def blacklist_join( synapse: protocol.Join ) -> Tuple[bool, str]:
+        if synapse.dendrite.hotkey not in metagraph.hotkeys:
+            bt.logging.trace(f'Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}')
+            return True, ""
+        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
+        stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
+        bt.logging.info(f"Stake: {stake}")
+        if stake < 3000 and config.blacklist == "on":
+            bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
+            return True, ""
+        return False, ""
+
+    # This is the core miner function, which decides the miner's response to a valid, high-priority request.
     def get_miner_status( synapse: protocol.MinerStatus ) -> protocol.MinerStatus:
+        # Check version of the synapse
+        validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
+        bt.logging.info(f"Validator {validator_uid} asks Miner Status")
         if not utils.check_version(synapse.version):
             synapse.version = utils.get_my_version()
             return synapse
+        # Get Free Memory and Calculate Bandwidth
+        synapse.free_memory = utils.get_available_memory()
+        bt.logging.info(f"Free memory: {utils.human_readable_size(synapse.free_memory)}")
         synapse.version = utils.get_my_version()
-        synapse.available = False
+        
+        if utils.update_flag:
+            synapse.available = False
+            return synapse
+        synapse.available = not utils.is_process_running(miner_processes)
+        return synapse
+
+    # The following functions control the miner's response to incoming requests.
+    # The blacklist function decides if a request should be ignored.
+    def blacklist_miner_status( synapse: protocol.MinerStatus ) -> Tuple[bool, str]:
+        allowed_hotkeys = [
+            "5DkRd1V7eurDpgKbiJt7YeJzQvxgpPiiU6FMDf8RmYQ78DpD", # Allow subnet owner's hotkey to fetch Miner Status
+        ]
+        if synapse.dendrite.hotkey in allowed_hotkeys:
+            return False, ""
+        if synapse.dendrite.hotkey not in metagraph.hotkeys:
+            # Ignore requests from unrecognized entities.
+            bt.logging.trace(f'Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}')
+            return True, ""
+        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
+        stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
+        bt.logging.info(f"Stake: {stake}")
+        if stake < 3000 and config.blacklist == "on":
+            bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
+            return True, ""
+        return False, ""
+
+    def join_group( synapse: protocol.Join ) -> protocol.Join:
+        validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
+        bt.logging.info(f"Validator {validator_uid} asks Joining Group")
+        try:
+            if not utils.check_version(synapse.version):
+                synapse.version = utils.get_my_version()
+                return synapse
+            if utils.update_flag:
+                synapse.joining = False
+                synapse.reason = 'Update'
+                return synapse
+            if utils.is_process_running(miner_processes):
+                synapse.joining = False
+                synapse.reason = 'Working'
+                return synapse
+            synapse.version = utils.get_my_version()
+            synapse.job.rank = synapse.ranks.get(str(my_subnet_uid))
+            if synapse.job.client_hotkey in miner_processes and miner_processes[synapse.job.client_hotkey]['process'].is_alive():
+                synapse.joining = False
+                synapse.reason = 'Already in group'
+                return synapse
+            # try to join the group
+            bt.logging.info("🔵 Start Process ...")
+            queue = mp.Queue()
+            process = mp.Process(target=start_miner_dist_process, args=(queue, axon.external_ip, config.port.range, wallet, synapse.job))
+            process.start()
+            miner_processes[synapse.job.client_hotkey] = {
+                'process': process,
+                'queue': queue,
+                'job': synapse.job
+            }
+            synapse.joining = True
+            return synapse
+        except Exception as e:
+            # if failed, set joining to false
+            bt.logging.warning(f"🛑 Error {e}")
+            bt.logging.trace(traceback.format_exc())
+            synapse.joining = False
+            synapse.reason = str(e)
+            return synapse
+
+    def blacklist_speed_test( synapse: protocol.SpeedTest ) -> Tuple[bool, str]:
+        if synapse.dendrite.hotkey not in metagraph.hotkeys:
+            bt.logging.trace(f'Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}')
+            return True, ""
+        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
+        stake = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
+        bt.logging.info(f"Stake: {stake}")
+        if stake < 3000 and config.blacklist == "on":
+            bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without enough stake')
+            return True, ""
+        if not speedtest_available():
+            bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} while speed testing')
+            return True, ""
+        return False, ""
+    
+    def speedtest_available():
+        if is_speedtest_running or time.time() - last_speedtest < 60:
+            return False
+        return True
+
+    # This is the core miner function, which decides the miner's response to a valid, high-priority request.
+    def speed_test( synapse: protocol.SpeedTest ) -> protocol.SpeedTest:
+        
+        global is_speedtest_running
+        global last_speedtest
+        
+        # Check version of the synapse
+        validator_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )
+        bt.logging.info(f"Validator {validator_uid} asks speed test")
+        if not utils.check_version(synapse.version):
+            synapse.version = utils.get_my_version()
+            return synapse
+        
+        # Speed Test
+        is_speedtest_running = True
+        try:
+            bt.logging.info("🔵 Start Speed Test ...")
+            synapse.result = speedtest_miner()
+        except Exception as e:
+            bt.logging.error(f"Error: {e}")
+            synapse.result = None
+        is_speedtest_running = False
+        last_speedtest = time.time()
+        if synapse.result:
+            bt.logging.info("Download: " + str(round(synapse.result['download']['bandwidth'] * 8 / 1000000, 2)) + " Mbps")
+            bt.logging.info("Upload: " + str(round(synapse.result['upload']['bandwidth'] * 8 / 1000000, 2)) + " Mbps")
+            bt.logging.info("Ping: " + str(synapse.result['ping']['latency']) + " ms")
+            bt.logging.info("URL: " + synapse.result['result']['url'])
+        
+        synapse.version = utils.get_my_version()
         return synapse
 
     def speedtest():
@@ -693,8 +854,17 @@ def main( config ):
         blacklist_fn = blacklist_get_benchmark_result
     ).attach(
         forward_fn = get_miner_status,
+        blacklist_fn = blacklist_miner_status,
+    ).attach(
+        forward_fn = join_group,
+        blacklist_fn = blacklist_join,
+    ).attach(
+        forward_fn = speed_test,
+        blacklist_fn = blacklist_speed_test,
     )
 
+    thread = Thread(target=utils.check_processes, args=(miner_processes,))
+    thread.start()
     # Serve passes the axon information to the network + netuid we are hosting on.
     # This will auto-update if the axon port of external ip have changed.
     bt.logging.info(f"Serving axon on network: {config.subtensor.chain_endpoint} with netuid: {config.netuid}")
@@ -807,7 +977,6 @@ def main( config ):
                     netuid = config.netuid,
                     subtensor=subtensor
                 )
-                
                 # Convert to uint16 weights and uids.
                 (
                     uint_uids,
@@ -821,7 +990,7 @@ def main( config ):
                 table = Table(title="Weights")
                 table.add_column("uid", justify="right", style="cyan", no_wrap=True)
                 table.add_column("weight", style="magenta")
-                for index, weight in list(zip(uint_uids, uint_weights)):
+                for index, weight in list(zip(processed_uids.tolist(), processed_weights.tolist())):
                     table.add_row(str(index), str(round(weight, 4)))
                 console = Console()
                 console.print(table)
@@ -834,8 +1003,8 @@ def main( config ):
                     netuid=config.netuid,
                     uids=uint_uids,
                     weights=uint_weights,
-                    wait_for_finalization=True,
-                    wait_for_inclusion=True,
+                    wait_for_finalization=False,
+                    wait_for_inclusion=False,
                 )
                 
                 if result: 
@@ -864,6 +1033,7 @@ def main( config ):
         except Exception as e:
             bt.logging.error(traceback.format_exc())
             continue
+    
 
 def wait_for_master_process(hotkey, timeout=20):
     start_time = time.time()

@@ -1,2 +1,7 @@
-git+https://github.com/opentensor/bittensor.git@revolution
-torch
+bittensor==6.7.1
+psutil
+cryptography
+pyinstaller
+torch==2.1.2
+pexpect==4.8.0
+netifaces==0.11.0
